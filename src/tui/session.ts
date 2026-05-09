@@ -54,6 +54,7 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
   await tools.refresh();
 
   let activeController: AbortController | null = null;
+  let refreshInProgress = false;
 
   const refreshTools = async (): Promise<void> => {
     if (state.getSnapshot().isBusy) {
@@ -61,8 +62,18 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
       return;
     }
 
+    if (refreshInProgress) {
+      state.setStatus('MCP tools refresh already in progress');
+      return;
+    }
+
+    refreshInProgress = true;
+
     state.setStatus('Refreshing MCP tools');
     let nextTools: ToolRegistry | null = null;
+    let nextProvider: typeof provider | null = null;
+    const previousProvider = provider;
+    const previousTools = tools;
 
     try {
       const reloadedConfig = await loadConfig();
@@ -72,21 +83,36 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
       await nextTools.refresh();
 
       if (nextConfig !== activeConfig) {
-        const nextProvider = await createProviderClient(nextConfig);
-        await provider.close?.();
-        provider = nextProvider;
-        activeConfig = nextConfig;
-        state.replaceConfig(nextConfig);
+        nextProvider = await createProviderClient(nextConfig);
       }
 
-      await tools.dispose();
+      if (nextProvider) {
+        provider = nextProvider;
+      }
+
       tools = nextTools;
+      activeConfig = nextConfig;
+      state.replaceConfig(nextConfig);
       state.setStatus(`Loaded ${tools.toProviderTools().length} tools`);
+
+      try {
+        await previousTools.dispose();
+        if (nextProvider) {
+          await previousProvider.close?.();
+        }
+      } catch {
+        // Best-effort cleanup; the live session already points at the new resources.
+      }
     } catch (error) {
+      if (nextProvider) {
+        await nextProvider.close?.();
+      }
       if (nextTools) {
         await nextTools.dispose();
       }
       state.setError(`Failed to refresh MCP tools: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      refreshInProgress = false;
     }
   };
 
