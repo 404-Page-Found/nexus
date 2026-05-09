@@ -1,6 +1,8 @@
 import type { AppConfig } from '../core/types.js';
+import type { ChatMessage } from '../core/types.js';
 import { AgentStateManager } from '../core/state-manager.js';
 import { runAgentLoop } from '../core/agent-loop.js';
+import { clearTranscript, loadTranscript, saveTranscript } from '../core/transcript-store.js';
 import { createProviderClient } from '../providers/index.js';
 import { ToolRegistry } from '../tools/registry.js';
 
@@ -22,7 +24,29 @@ export interface TuiSession {
 }
 
 export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
-  const state = new AgentStateManager(config);
+  const initialMessages = await loadTranscript();
+  let transcriptWriteQueue = Promise.resolve();
+
+  const persistConversation = (messages: ChatMessage[]): Promise<void> => {
+    transcriptWriteQueue = transcriptWriteQueue
+      .catch(() => undefined)
+      .then(async () => {
+        if (messages.length === 0) {
+          await clearTranscript();
+          return;
+        }
+
+        await saveTranscript(messages);
+      });
+
+    void transcriptWriteQueue.catch(() => undefined);
+    return transcriptWriteQueue;
+  };
+
+  const state = new AgentStateManager(config, {
+    initialMessages,
+    onConversationChange: persistConversation
+  });
   const provider = await createProviderClient(config);
   const tools = new ToolRegistry(config);
   await tools.refresh();
@@ -81,7 +105,7 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
       {
         id: 'new-chat',
         label: 'New chat',
-        description: 'Clear the conversation history'
+        description: 'Clear the conversation history and saved transcript'
       },
       {
         id: 'refresh-tools',
@@ -105,6 +129,7 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
     abort: () => activeController?.abort(),
     executeCommand,
     dispose: async () => {
+      await transcriptWriteQueue.catch(() => undefined);
       await tools.dispose();
       await provider.close?.();
     }

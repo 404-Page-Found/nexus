@@ -31,6 +31,10 @@ Secrets are resolved in this order:
 2. OS keychain when `keytar` is available.
 3. `~/.agent/keys.json` as a fallback vault.
 
+## Conversation history
+
+The TUI restores the last transcript from `~/.agent/history.yaml` on startup. Use the `New chat` command to clear both the in-memory conversation and the saved transcript.
+
 ## MCP servers
 
 Add stdio or streamable HTTP MCP servers in the setup wizard. The agent will discover tools at startup and prefix remote tool names with the server name.
