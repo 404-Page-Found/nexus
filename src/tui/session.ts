@@ -2,6 +2,7 @@ import type { AppConfig } from '../core/types.js';
 import type { ChatMessage } from '../core/types.js';
 import { AgentStateManager } from '../core/state-manager.js';
 import { runAgentLoop } from '../core/agent-loop.js';
+import { loadConfig } from '../config/persistence.js';
 import { clearTranscript, loadTranscript, saveTranscript } from '../core/transcript-store.js';
 import { createProviderClient } from '../providers/index.js';
 import { ToolRegistry } from '../tools/registry.js';
@@ -26,6 +27,7 @@ export interface TuiSession {
 export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
   const initialMessages = await loadTranscript();
   let transcriptWriteQueue = Promise.resolve();
+  let activeConfig = config;
 
   const persistConversation = (messages: ChatMessage[]): Promise<void> => {
     transcriptWriteQueue = transcriptWriteQueue
@@ -47,16 +49,45 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
     initialMessages,
     onConversationChange: persistConversation
   });
-  const provider = await createProviderClient(config);
-  const tools = new ToolRegistry(config);
+  let provider = await createProviderClient(activeConfig);
+  let tools = new ToolRegistry(activeConfig);
   await tools.refresh();
 
   let activeController: AbortController | null = null;
 
   const refreshTools = async (): Promise<void> => {
+    if (state.getSnapshot().isBusy) {
+      state.setStatus('Finish the active turn before refreshing MCP tools');
+      return;
+    }
+
     state.setStatus('Refreshing MCP tools');
-    await tools.refresh();
-    state.setStatus(`Loaded ${tools.toProviderTools().length} tools`);
+    let nextTools: ToolRegistry | null = null;
+
+    try {
+      const reloadedConfig = await loadConfig();
+      const nextConfig = reloadedConfig ?? activeConfig;
+      nextTools = new ToolRegistry(nextConfig);
+
+      await nextTools.refresh();
+
+      if (nextConfig !== activeConfig) {
+        const nextProvider = await createProviderClient(nextConfig);
+        await provider.close?.();
+        provider = nextProvider;
+        activeConfig = nextConfig;
+        state.replaceConfig(nextConfig);
+      }
+
+      await tools.dispose();
+      tools = nextTools;
+      state.setStatus(`Loaded ${tools.toProviderTools().length} tools`);
+    } catch (error) {
+      if (nextTools) {
+        await nextTools.dispose();
+      }
+      state.setError(`Failed to refresh MCP tools: ${error instanceof Error ? error.message : String(error)}`);
+    }
   };
 
   const submitPrompt = async (prompt: string): Promise<void> => {
@@ -68,7 +99,7 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
     try {
       await runAgentLoop(
         {
-          config,
+          config: activeConfig,
           state,
           provider,
           tools,
