@@ -11,15 +11,23 @@ export interface AgentStateSnapshot {
 
 type StateListener = () => void;
 
+export interface AgentStateOptions {
+  initialMessages?: ChatMessage[];
+  onConversationChange?: (messages: ChatMessage[]) => void | Promise<void>;
+}
+
 export class AgentStateManager {
   private snapshotValue: AgentStateSnapshot;
 
   private readonly listeners = new Set<StateListener>();
 
-  public constructor(config: AppConfig) {
+  private readonly onConversationChange: ((messages: ChatMessage[]) => void | Promise<void>) | undefined;
+
+  public constructor(config: AppConfig, options: AgentStateOptions = {}) {
+    this.onConversationChange = options.onConversationChange;
     this.snapshotValue = {
       config,
-      messages: [],
+      messages: structuredClone(options.initialMessages ?? []),
       status: 'Idle',
       isBusy: false,
       streamingText: '',
@@ -74,6 +82,8 @@ export class AgentStateManager {
     this.update((snapshot) => {
       snapshot.messages = [...snapshot.messages, structuredClone(message)];
     });
+
+    this.notifyConversationChange();
   }
 
   public setStreamingText(text: string): void {
@@ -106,6 +116,8 @@ export class AgentStateManager {
       snapshot.streamingText = '';
       snapshot.error = undefined;
     });
+
+    this.notifyConversationChange();
   }
 
   public replaceConfig(config: AppConfig): void {
@@ -124,5 +136,13 @@ export class AgentStateManager {
     for (const listener of this.listeners) {
       listener();
     }
+  }
+
+  private notifyConversationChange(): void {
+    if (!this.onConversationChange) {
+      return;
+    }
+
+    void this.onConversationChange(structuredClone(this.snapshotValue.messages));
   }
 }
