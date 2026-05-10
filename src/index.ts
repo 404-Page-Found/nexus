@@ -3,13 +3,18 @@ import { runConfigWizard } from './config/wizard.js';
 import { runTui } from './tui/run.js';
 
 const argv = new Set(process.argv.slice(2));
-let existingConfig = null;
+let existingConfig: Awaited<ReturnType<typeof loadConfig>> = null;
 
 try {
   existingConfig = await loadConfig();
 } catch (error) {
-  if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-    throw error;
+  if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+    existingConfig = null;
+  } else {
+    console.warn(
+      `Unable to read existing config; opening setup with defaults: ${error instanceof Error ? error.message : String(error)}`
+    );
+    existingConfig = null;
   }
 }
 
