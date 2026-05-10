@@ -7,8 +7,10 @@ let existingConfig = null;
 
 try {
   existingConfig = await loadConfig();
-} catch {
-  existingConfig = null;
+} catch (error) {
+  if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+    throw error;
+  }
 }
 
 if (argv.has('--setup') || argv.has('setup') || argv.has('config')) {
