@@ -55,7 +55,7 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
 
   let activeController: AbortController | null = null;
   let refreshInProgress = false;
-  let refreshPromise: Promise<void> = Promise.resolve();
+  let refreshPromise: Promise<void> | null = null;
 
   const refreshTools = async (): Promise<void> => {
     if (state.getSnapshot().isBusy) {
@@ -65,58 +65,63 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
 
     if (refreshInProgress) {
       state.setStatus('MCP tools refresh already in progress');
-      return;
+      return refreshPromise ?? Promise.resolve();
     }
 
     refreshInProgress = true;
-  state.markBusy('Refreshing MCP tools');
+    state.markBusy('Refreshing MCP tools');
     let nextTools: ToolRegistry | null = null;
     let nextProvider: typeof provider | null = null;
     const previousProvider = provider;
     const previousTools = tools;
 
-    try {
-      const reloadedConfig = await loadConfig();
-      const nextConfig = reloadedConfig ?? activeConfig;
-      nextTools = new ToolRegistry(nextConfig);
-
-      await nextTools.refresh();
-
-      if (nextConfig !== activeConfig) {
-        nextProvider = await createProviderClient(nextConfig);
-      }
-
-      if (nextProvider) {
-        provider = nextProvider;
-      }
-
-      tools = nextTools;
-      activeConfig = nextConfig;
-      state.replaceConfig(nextConfig);
-      state.markIdle(`Loaded ${tools.toProviderTools().length} tools`);
-
+    refreshPromise = (async () => {
       try {
-        await previousTools.dispose();
-        if (nextProvider) {
-          await previousProvider.close?.();
+        const reloadedConfig = await loadConfig();
+        const nextConfig = reloadedConfig ?? activeConfig;
+        nextTools = new ToolRegistry(nextConfig);
+
+        await nextTools.refresh();
+
+        if (nextConfig !== activeConfig) {
+          nextProvider = await createProviderClient(nextConfig);
         }
-      } catch {
-        // Best-effort cleanup; the live session already points at the new resources.
+
+        if (nextProvider) {
+          provider = nextProvider;
+        }
+
+        tools = nextTools;
+        activeConfig = nextConfig;
+        state.replaceConfig(nextConfig);
+        state.markIdle(`Loaded ${tools.toProviderTools().length} tools`);
+
+        try {
+          await previousTools.dispose();
+          if (nextProvider) {
+            await previousProvider.close?.();
+          }
+        } catch {
+          // Best-effort cleanup; the live session already points at the new resources.
+        }
+      } catch (error) {
+        if (nextProvider) {
+          await nextProvider.close?.();
+        }
+        if (nextTools) {
+          await nextTools.dispose();
+        }
+        state.setError(`Failed to refresh MCP tools: ${error instanceof Error ? error.message : String(error)}`);
+      } finally {
+        refreshInProgress = false;
+        refreshPromise = null;
+        if (state.getSnapshot().isBusy) {
+          state.markIdle();
+        }
       }
-    } catch (error) {
-      if (nextProvider) {
-        await nextProvider.close?.();
-      }
-      if (nextTools) {
-        await nextTools.dispose();
-      }
-      state.setError(`Failed to refresh MCP tools: ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      refreshInProgress = false;
-      if (state.getSnapshot().isBusy) {
-        state.markIdle();
-      }
-    }
+    })();
+
+    return refreshPromise;
   };
 
   const submitPrompt = async (prompt: string): Promise<void> => {
@@ -149,8 +154,7 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
         state.clearConversation();
         break;
       case 'refresh-tools':
-        refreshPromise = refreshTools();
-        await refreshPromise;
+        await refreshTools();
         break;
       case 'abort':
         activeController?.abort();
@@ -191,7 +195,7 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
     executeCommand,
     dispose: async () => {
       await transcriptWriteQueue.catch(() => undefined);
-      await refreshPromise.catch(() => undefined);
+      await refreshPromise?.catch(() => undefined);
       await tools.dispose();
       await provider.close?.();
     }
