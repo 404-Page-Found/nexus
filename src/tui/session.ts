@@ -78,7 +78,11 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
     refreshPromise = (async () => {
       try {
         const reloadedConfig = await loadConfig();
-        const nextConfig = reloadedConfig ?? activeConfig;
+        if (!reloadedConfig) {
+          throw new Error('No config file found. Run setup before refreshing MCP tools.');
+        }
+
+        const nextConfig = reloadedConfig;
         nextTools = new ToolRegistry(nextConfig);
 
         await nextTools.refresh();
@@ -102,7 +106,7 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
             await previousProvider.close?.();
           }
         } catch {
-          // Best-effort cleanup; the live session already points at the new resources.
+          // Best-effort cleanup; the live session already points at the refreshed resources.
         }
       } catch (error) {
         if (nextProvider) {
