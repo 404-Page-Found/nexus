@@ -3,11 +3,12 @@ import { runConfigWizard } from './config/wizard.js';
 import { runTui } from './tui/run.js';
 
 const argv = new Set(process.argv.slice(2));
+const existingConfig = await loadConfig();
 
 if (argv.has('--setup') || argv.has('setup') || argv.has('config')) {
-  await runConfigWizard();
+  await runConfigWizard(existingConfig ?? undefined);
   process.exit(0);
 }
 
-const config = (await loadConfig()) ?? (await runConfigWizard());
+const config = existingConfig ?? (await runConfigWizard());
 await runTui(config);

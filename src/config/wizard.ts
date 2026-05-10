@@ -10,7 +10,7 @@ import {
 import type { AppConfig, McpServerConfig, ProviderKind } from '../core/types.js';
 import { createDefaultConfig, getDefaultModel } from './schema.js';
 import { saveConfig } from './persistence.js';
-import { storeProviderApiKey } from '../providers/auth.js';
+import { resolveProviderSecret, storeProviderApiKey } from '../providers/auth.js';
 import { nativeToolCatalog } from '../tools/nativeTools.js';
 
 function asArray(value: string | undefined): string[] {
@@ -46,10 +46,15 @@ function asRecord(value: string | undefined): Record<string, string> | undefined
   return undefined;
 }
 
-async function promptMcpServer(): Promise<McpServerConfig | null> {
+function jsonOrEmpty(value: unknown): string {
+  return JSON.stringify(value ?? {}, null, 2) ?? '{}';
+}
+
+async function promptMcpServer(existingServer?: McpServerConfig): Promise<McpServerConfig | null> {
   const name = await text({
     message: 'MCP server name',
-    placeholder: 'filesystem'
+    placeholder: 'filesystem',
+    initialValue: existingServer?.name ?? ''
   });
 
   if (isCancel(name)) {
@@ -61,7 +66,8 @@ async function promptMcpServer(): Promise<McpServerConfig | null> {
     options: [
       { label: 'stdio', value: 'stdio' },
       { label: 'http', value: 'http' }
-    ]
+    ],
+    initialValue: existingServer?.transport ?? 'stdio'
   });
 
   if (isCancel(transport)) {
@@ -71,7 +77,8 @@ async function promptMcpServer(): Promise<McpServerConfig | null> {
   if (transport === 'stdio') {
     const command = await text({
       message: 'Command to start the server',
-      placeholder: 'node'
+      placeholder: 'node',
+      initialValue: existingServer?.command ?? ''
     });
 
     if (isCancel(command)) {
@@ -81,7 +88,7 @@ async function promptMcpServer(): Promise<McpServerConfig | null> {
     const args = await text({
       message: 'Command args as JSON array',
       placeholder: '["server.js"]',
-      initialValue: '[]'
+      initialValue: jsonOrEmpty(existingServer?.args ?? [])
     });
 
     if (isCancel(args)) {
@@ -90,7 +97,8 @@ async function promptMcpServer(): Promise<McpServerConfig | null> {
 
     const cwd = await text({
       message: 'Optional working directory',
-      placeholder: 'C:/path/to/server'
+      placeholder: 'C:/path/to/server',
+      initialValue: existingServer?.cwd ?? ''
     });
 
     if (isCancel(cwd)) {
@@ -100,7 +108,7 @@ async function promptMcpServer(): Promise<McpServerConfig | null> {
     const env = await text({
       message: 'Optional environment JSON object',
       placeholder: '{"DEBUG":"1"}',
-      initialValue: '{}'
+      initialValue: jsonOrEmpty(existingServer?.env)
     });
 
     if (isCancel(env)) {
@@ -116,13 +124,14 @@ async function promptMcpServer(): Promise<McpServerConfig | null> {
       args: asArray(args),
       ...(cwd.trim() ? { cwd: cwd.trim() } : {}),
       ...(parsedEnv ? { env: parsedEnv } : {}),
-      enabled: true
+      enabled: existingServer?.enabled ?? true
     };
   }
 
   const url = await text({
     message: 'HTTP MCP endpoint URL',
-    placeholder: 'http://localhost:3000/mcp'
+    placeholder: 'http://localhost:3000/mcp',
+    initialValue: existingServer?.url ?? ''
   });
 
   if (isCancel(url)) {
@@ -132,7 +141,7 @@ async function promptMcpServer(): Promise<McpServerConfig | null> {
   const headers = await text({
     message: 'Optional request headers JSON object',
     placeholder: '{"Authorization":"Bearer ..."}',
-    initialValue: '{}'
+    initialValue: jsonOrEmpty(existingServer?.headers)
   });
 
   if (isCancel(headers)) {
@@ -146,12 +155,67 @@ async function promptMcpServer(): Promise<McpServerConfig | null> {
     transport,
     url,
     ...(parsedHeaders ? { headers: parsedHeaders } : {}),
-    enabled: true
+    enabled: existingServer?.enabled ?? true
   };
 }
 
-export async function runConfigWizard(): Promise<AppConfig> {
-  const defaults = createDefaultConfig();
+async function promptMcpServers(existingServers: McpServerConfig[]): Promise<McpServerConfig[] | null> {
+  const nextServers: McpServerConfig[] = [];
+
+  for (const server of existingServers) {
+    const action = await select({
+      message: `MCP server ${server.name}`,
+      options: [
+        { label: 'Keep', value: 'keep' },
+        { label: 'Edit', value: 'edit' },
+        { label: 'Remove', value: 'remove' }
+      ],
+      initialValue: 'keep'
+    });
+
+    if (isCancel(action)) {
+      return null;
+    }
+
+    if (action === 'keep') {
+      nextServers.push(server);
+      continue;
+    }
+
+    if (action === 'edit') {
+      const updatedServer = await promptMcpServer(server);
+      if (!updatedServer) {
+        return null;
+      }
+
+      nextServers.push(updatedServer);
+    }
+  }
+
+  while (true) {
+    const addServer = await confirm({ message: 'Add an MCP server?' });
+
+    if (isCancel(addServer)) {
+      return null;
+    }
+
+    if (!addServer) {
+      break;
+    }
+
+    const server = await promptMcpServer();
+    if (!server) {
+      return null;
+    }
+
+    nextServers.push(server);
+  }
+
+  return nextServers;
+}
+
+export async function runConfigWizard(seedConfig?: AppConfig): Promise<AppConfig> {
+  const defaults = seedConfig ?? createDefaultConfig();
 
   console.clear();
 
@@ -161,7 +225,8 @@ export async function runConfigWizard(): Promise<AppConfig> {
       { label: 'OpenAI', value: 'openai' },
       { label: 'Anthropic', value: 'anthropic' },
       { label: 'OpenAI-compatible endpoint', value: 'openai-compatible' }
-    ]
+    ],
+    initialValue: defaults.provider.kind
   });
 
   if (isCancel(provider)) {
@@ -171,7 +236,10 @@ export async function runConfigWizard(): Promise<AppConfig> {
 
   const model = await text({
     message: 'Default model',
-    initialValue: getDefaultModel(provider as ProviderKind)
+    initialValue:
+      provider === defaults.provider.kind
+        ? defaults.provider.model
+        : getDefaultModel(provider as ProviderKind)
   });
 
   if (isCancel(model)) {
@@ -183,7 +251,8 @@ export async function runConfigWizard(): Promise<AppConfig> {
   if (provider === 'openai-compatible') {
     const compatibleBaseUrl = await text({
       message: 'Base URL for the compatible endpoint',
-      placeholder: 'https://example.com/v1'
+      placeholder: 'https://example.com/v1',
+      initialValue: defaults.provider.kind === 'openai-compatible' ? defaults.provider.baseUrl ?? '' : ''
     });
 
     if (isCancel(compatibleBaseUrl)) {
@@ -194,8 +263,10 @@ export async function runConfigWizard(): Promise<AppConfig> {
     baseUrl = compatibleBaseUrl.trim() || undefined;
   }
 
+  const currentSecret = await resolveProviderSecret(provider as ProviderKind);
   const saveApiKey = await confirm({
-    message: 'Store an API key now?'
+    message: 'Store an API key now?',
+    initialValue: Boolean(currentSecret)
   });
 
   if (isCancel(saveApiKey)) {
@@ -224,7 +295,8 @@ export async function runConfigWizard(): Promise<AppConfig> {
   const nativeTools = await multiselect({
     message: 'Select native tools to enable',
     options: availableNativeTools,
-    required: false
+    required: false,
+    initialValues: defaults.tools.native
   });
 
   if (isCancel(nativeTools)) {
@@ -232,14 +304,10 @@ export async function runConfigWizard(): Promise<AppConfig> {
     process.exit(0);
   }
 
-  const mcpServers: McpServerConfig[] = [];
-  while (await confirm({ message: 'Add an MCP server?' })) {
-    const server = await promptMcpServer();
-    if (!server) {
-      break;
-    }
-
-    mcpServers.push(server);
+  const mcpServers = await promptMcpServers(defaults.tools.mcpServers);
+  if (!mcpServers) {
+    cancel('Setup cancelled');
+    process.exit(0);
   }
 
   const config: AppConfig = {
@@ -247,14 +315,16 @@ export async function runConfigWizard(): Promise<AppConfig> {
     provider: {
       kind: provider as ProviderKind,
       model,
-      ...(baseUrl?.trim() ? { baseUrl: baseUrl.trim() } : {})
+      ...(baseUrl?.trim() ? { baseUrl: baseUrl.trim() } : {}),
+      ...(defaults.provider.temperature !== undefined ? { temperature: defaults.provider.temperature } : {}),
+      ...(defaults.provider.maxTokens !== undefined ? { maxTokens: defaults.provider.maxTokens } : {})
     },
     tools: {
       native: nativeTools as string[],
       mcpServers
     },
     ui: {
-      autoConnectMcp: true
+      autoConnectMcp: defaults.ui.autoConnectMcp
     }
   };
 

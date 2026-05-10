@@ -1,5 +1,6 @@
 import type { AppConfig } from '../core/types.js';
 import type { ChatMessage } from '../core/types.js';
+import { spawnSync } from 'child_process';
 import { AgentStateManager } from '../core/state-manager.js';
 import { runAgentLoop } from '../core/agent-loop.js';
 import { loadConfig } from '../config/persistence.js';
@@ -56,6 +57,24 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
   let activeController: AbortController | null = null;
   let refreshInProgress = false;
   let refreshPromise: Promise<void> | null = null;
+
+  const launchConfigEditor = (): boolean => {
+    const result = spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'setup'], {
+      stdio: 'inherit'
+    });
+
+    if (result.error) {
+      state.setError(`Failed to launch config editor: ${result.error.message}`);
+      return false;
+    }
+
+    if (result.status !== 0) {
+      state.setError(`Config editor exited with code ${result.status ?? 'unknown'}`);
+      return false;
+    }
+
+    return true;
+  };
 
   const refreshTools = async (): Promise<void> => {
     if (state.getSnapshot().isBusy) {
@@ -162,6 +181,18 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
       case 'new-chat':
         state.clearConversation();
         break;
+      case 'edit-config':
+        if (state.getSnapshot().isBusy) {
+          state.setStatus('Finish the active turn before editing config');
+          break;
+        }
+
+        state.setStatus('Editing configuration');
+
+        if (launchConfigEditor()) {
+          await refreshTools();
+        }
+        break;
       case 'refresh-tools':
         await refreshTools();
         break;
@@ -180,6 +211,11 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
         id: 'new-chat',
         label: 'New chat',
         description: 'Clear the conversation history and saved transcript'
+      },
+      {
+        id: 'edit-config',
+        label: 'Edit config',
+        description: 'Open the configuration editor and reload settings after saving'
       },
       {
         id: 'refresh-tools',
