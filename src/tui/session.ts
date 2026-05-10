@@ -102,11 +102,16 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
 
         try {
           await previousTools.dispose();
-          if (nextProvider) {
-            await previousProvider.close?.();
-          }
         } catch {
           // Best-effort cleanup; the live session already points at the refreshed resources.
+        }
+
+        if (nextProvider) {
+          try {
+            await previousProvider.close?.();
+          } catch {
+            // Best-effort cleanup; the live session already points at the refreshed resources.
+          }
         }
       } catch (error) {
         if (nextProvider) {
