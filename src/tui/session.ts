@@ -55,6 +55,7 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
 
   let activeController: AbortController | null = null;
   let refreshInProgress = false;
+  let refreshPromise: Promise<void> = Promise.resolve();
 
   const refreshTools = async (): Promise<void> => {
     if (state.getSnapshot().isBusy) {
@@ -68,8 +69,7 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
     }
 
     refreshInProgress = true;
-
-    state.setStatus('Refreshing MCP tools');
+  state.markBusy('Refreshing MCP tools');
     let nextTools: ToolRegistry | null = null;
     let nextProvider: typeof provider | null = null;
     const previousProvider = provider;
@@ -93,7 +93,7 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
       tools = nextTools;
       activeConfig = nextConfig;
       state.replaceConfig(nextConfig);
-      state.setStatus(`Loaded ${tools.toProviderTools().length} tools`);
+      state.markIdle(`Loaded ${tools.toProviderTools().length} tools`);
 
       try {
         await previousTools.dispose();
@@ -113,6 +113,9 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
       state.setError(`Failed to refresh MCP tools: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       refreshInProgress = false;
+      if (state.getSnapshot().isBusy) {
+        state.markIdle();
+      }
     }
   };
 
@@ -146,7 +149,8 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
         state.clearConversation();
         break;
       case 'refresh-tools':
-        await refreshTools();
+        refreshPromise = refreshTools();
+        await refreshPromise;
         break;
       case 'abort':
         activeController?.abort();
@@ -187,6 +191,7 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
     executeCommand,
     dispose: async () => {
       await transcriptWriteQueue.catch(() => undefined);
+      await refreshPromise.catch(() => undefined);
       await tools.dispose();
       await provider.close?.();
     }
