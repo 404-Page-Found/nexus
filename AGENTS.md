@@ -21,8 +21,10 @@ This repository is a Node 24+ TypeScript ESM project with an Ink-based TUI and M
 - Agent loop and tool orchestration: [src/core/agent-loop.ts](src/core/agent-loop.ts)
 - Tool registry and MCP bridge: [src/tools/registry.ts](src/tools/registry.ts) and [src/tools/mcpBridge.ts](src/tools/mcpBridge.ts)
 - Provider auth and secret resolution: [src/providers/auth.ts](src/providers/auth.ts)
+- TUI session state and transcript handling: [src/tui/session.ts](src/tui/session.ts) and [src/core/state-manager.ts](src/core/state-manager.ts)
 
 ## Debugging Notes
 
 - If the TUI behaves unexpectedly after submission, check for local config overrides before changing keyboard or rendering code.
+- The last transcript is restored from `~/.agent/history.yaml` on startup, and `New chat` clears both in-memory state and the saved transcript; see [README.md](README.md) for the user-facing behavior.
 - For Windows/pwsh smoke tests, `return` is the Enter path and `\u001b[C` is the right-arrow sequence observed in the TUI.
