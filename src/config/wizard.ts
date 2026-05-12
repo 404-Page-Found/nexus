@@ -11,6 +11,7 @@ import type { AppConfig, McpServerConfig, ProviderKind } from '../core/types.js'
 import { createDefaultConfig, getDefaultModel } from './schema.js';
 import { saveConfig } from './persistence.js';
 import { resolveProviderSecret, storeProviderApiKey } from '../providers/auth.js';
+import { builtInProviderKinds, getProviderDefinition } from '../providers/catalog.js';
 import { nativeToolCatalog } from '../tools/nativeTools.js';
 
 function asArray(value: string | undefined): string[] {
@@ -222,8 +223,10 @@ export async function runConfigWizard(seedConfig?: AppConfig): Promise<AppConfig
   const provider = await select({
     message: 'Select your primary provider',
     options: [
-      { label: 'OpenAI', value: 'openai' },
-      { label: 'Anthropic', value: 'anthropic' },
+      ...builtInProviderKinds.map((kind) => ({
+        label: getProviderDefinition(kind).label,
+        value: kind
+      })),
       { label: 'OpenAI-compatible endpoint', value: 'openai-compatible' }
     ],
     initialValue: defaults.provider.kind

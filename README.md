@@ -31,6 +31,8 @@ Secrets are resolved in this order:
 2. OS keychain when `keytar` is available.
 3. `~/.agent/keys.json` as a fallback vault.
 
+Built-in provider presets are available for OpenAI, Anthropic, xAI, Groq, and Mistral. The setup wizard stores each provider's API key under its own secret namespace and pre-fills the matching default model and API base URL.
+
 ## Conversation history
 
 The TUI restores the last transcript from `~/.agent/history.yaml` on startup. Use the `New chat` command to clear both the in-memory conversation and the saved transcript.

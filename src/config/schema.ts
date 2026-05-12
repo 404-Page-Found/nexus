@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import type { AppConfig, ProviderKind } from '../core/types.js';
+import { getDefaultProviderModel } from '../providers/catalog.js';
 
-export const providerKindSchema = z.enum(['openai', 'anthropic', 'openai-compatible']);
+export const providerKindSchema = z.enum(['openai', 'anthropic', 'xai', 'groq', 'mistral', 'openai-compatible']);
 
 export const mcpServerSchema = z.object({
   name: z.string().min(1),
@@ -53,12 +54,5 @@ export function parseConfig(input: unknown): AppConfig {
 }
 
 export function getDefaultModel(kind: ProviderKind): string {
-  switch (kind) {
-    case 'anthropic':
-      return 'claude-3-5-sonnet-latest';
-    case 'openai-compatible':
-    case 'openai':
-    default:
-      return 'gpt-4.1-mini';
-  }
+  return getDefaultProviderModel(kind);
 }

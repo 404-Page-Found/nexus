@@ -1,23 +1,22 @@
 import type { AppConfig } from '../core/types.js';
 import type { LLMClient } from './types.js';
-import { resolveProviderSecret } from './auth.js';
+import { getProviderAuthMessage, resolveProviderSecret } from './auth.js';
+import { getProviderDefinition } from './catalog.js';
 import { AnthropicClient } from './anthropic.js';
 import { OpenAICompatibleClient } from './openai-compatible.js';
 
 const openAIBaseUrl = 'https://api.openai.com/v1';
-const anthropicBaseUrl = 'https://api.anthropic.com/v1';
 
 export async function createProviderClient(config: AppConfig): Promise<LLMClient> {
+  const definition = getProviderDefinition(config.provider.kind);
   const secret = await resolveProviderSecret(config.provider.kind);
   if (!secret) {
-    throw new Error(
-      `No API key found for ${config.provider.kind}. Set an environment variable, use the keychain, or run npm run setup.`,
-    );
+    throw new Error(getProviderAuthMessage(config.provider.kind));
   }
 
-  const baseUrl = config.provider.baseUrl ?? (config.provider.kind === 'anthropic' ? anthropicBaseUrl : openAIBaseUrl);
+  const baseUrl = config.provider.baseUrl ?? definition.defaultBaseUrl ?? openAIBaseUrl;
 
-  if (config.provider.kind === 'anthropic') {
+  if (definition.clientKind === 'anthropic') {
     return new AnthropicClient({
       model: config.provider.model,
       baseUrl,
