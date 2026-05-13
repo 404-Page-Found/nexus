@@ -118,5 +118,5 @@ export async function storeProviderApiKey(provider: ProviderKind, apiKey: string
 export function getProviderAuthMessage(provider: ProviderKind): string {
   const label = getProviderLabel(provider);
   const envVars = getProviderSecretEnvVars(provider);
-  return `No API key found for ${label}. Set ${envVars.join(' or ')}, use the keychain, or run npm run setup.`;
+  return `No API key found for ${label}. Checked ${envVars.join(' or ')}, then the OS keychain, then ~/.agent/keys.json. Set one of the env vars, store a key in the keychain, or run npm run setup.`;
 }

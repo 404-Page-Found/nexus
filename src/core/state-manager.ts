@@ -3,11 +3,14 @@ import type { AppConfig, ChatMessage } from './types.js';
 export interface AgentStateSnapshot {
   config: AppConfig;
   messages: ChatMessage[];
+  authSource: ProviderAuthSource;
   status: string;
   isBusy: boolean;
   streamingText: string;
   error: string | undefined;
 }
+
+export type ProviderAuthSource = 'env' | 'keychain' | 'file' | 'missing';
 
 type StateListener = () => void;
 
@@ -28,6 +31,7 @@ export class AgentStateManager {
     this.snapshotValue = {
       config,
       messages: structuredClone(options.initialMessages ?? []),
+      authSource: 'missing',
       status: 'Idle',
       isBusy: false,
       streamingText: '',
@@ -123,6 +127,12 @@ export class AgentStateManager {
   public replaceConfig(config: AppConfig): void {
     this.update((snapshot) => {
       snapshot.config = config;
+    });
+  }
+
+  public setAuthSource(authSource: ProviderAuthSource): void {
+    this.update((snapshot) => {
+      snapshot.authSource = authSource;
     });
   }
 

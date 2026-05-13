@@ -18,6 +18,7 @@ export interface TuiSession {
   state: AgentStateManager;
   commands: TuiCommand[];
   submitPrompt(prompt: string): Promise<void>;
+  refreshAuth(): Promise<void>;
   refreshTools(): Promise<void>;
   clearConversation(): void;
   abort(): void;
@@ -50,7 +51,9 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
     initialMessages,
     onConversationChange: persistConversation
   });
-  let provider = await createProviderClient(activeConfig);
+  const initialProvider = await createProviderClient(activeConfig);
+  let provider = initialProvider.client;
+  state.setAuthSource(initialProvider.secretSource);
   let tools = new ToolRegistry(activeConfig);
   await tools.refresh();
 
@@ -76,6 +79,35 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
     return true;
   };
 
+  const reloadProvider = async (nextConfig: AppConfig): Promise<void> => {
+    const nextProvider = await createProviderClient(nextConfig);
+    const previousProvider = provider;
+    provider = nextProvider.client;
+    state.setAuthSource(nextProvider.secretSource);
+
+    try {
+      await previousProvider.close?.();
+    } catch {
+      // Best-effort cleanup; the live session already points at the refreshed provider.
+    }
+  };
+
+  const refreshAuth = async (): Promise<void> => {
+    if (state.getSnapshot().isBusy) {
+      state.setStatus('Finish the active turn before refreshing credentials');
+      return;
+    }
+
+    state.markBusy('Refreshing provider credentials');
+
+    try {
+      await reloadProvider(activeConfig);
+      state.markIdle('Provider credentials refreshed');
+    } catch (error) {
+      state.setError(`Failed to refresh provider credentials: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
   const refreshTools = async (): Promise<void> => {
     if (state.getSnapshot().isBusy) {
       state.setStatus('Finish the active turn before refreshing MCP tools');
@@ -90,8 +122,6 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
     refreshInProgress = true;
     state.markBusy('Refreshing MCP tools');
     let nextTools: ToolRegistry | null = null;
-    let nextProvider: typeof provider | null = null;
-    const previousProvider = provider;
     const previousTools = tools;
 
     refreshPromise = (async () => {
@@ -106,13 +136,7 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
 
         await nextTools.refresh();
 
-        if (nextConfig !== activeConfig) {
-          nextProvider = await createProviderClient(nextConfig);
-        }
-
-        if (nextProvider) {
-          provider = nextProvider;
-        }
+        await reloadProvider(nextConfig);
 
         tools = nextTools;
         activeConfig = nextConfig;
@@ -124,18 +148,7 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
         } catch {
           // Best-effort cleanup; the live session already points at the refreshed resources.
         }
-
-        if (nextProvider) {
-          try {
-            await previousProvider.close?.();
-          } catch {
-            // Best-effort cleanup; the live session already points at the refreshed resources.
-          }
-        }
       } catch (error) {
-        if (nextProvider) {
-          await nextProvider.close?.();
-        }
         if (nextTools) {
           await nextTools.dispose();
         }
@@ -193,6 +206,9 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
           await refreshTools();
         }
         break;
+      case 'refresh-auth':
+        await refreshAuth();
+        break;
       case 'refresh-tools':
         await refreshTools();
         break;
@@ -218,9 +234,14 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
         description: 'Open the configuration editor and reload settings after saving'
       },
       {
+        id: 'refresh-auth',
+        label: 'Refresh auth',
+        description: 'Re-read the active provider credentials from env, keychain, or vault'
+      },
+      {
         id: 'refresh-tools',
         label: 'Refresh tools',
-        description: 'Reconnect MCP servers and reload the tool list'
+        description: 'Reconnect MCP servers, reload the tool list, and re-resolve provider auth'
       },
       {
         id: 'abort',
@@ -234,6 +255,7 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
       }
     ],
     submitPrompt,
+    refreshAuth,
     refreshTools,
     clearConversation: () => state.clearConversation(),
     abort: () => activeController?.abort(),
