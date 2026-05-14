@@ -94,6 +94,7 @@ export function App({ session }: { session: TuiSession }): ReactElement {
         status={snapshot.status}
         provider={snapshot.config.provider.kind}
         model={snapshot.config.provider.model}
+        authSource={snapshot.authSource}
         busy={snapshot.isBusy}
         error={snapshot.error}
       />

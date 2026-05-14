@@ -55,12 +55,14 @@ export function StatusBar({
   status,
   provider,
   model,
+  authSource,
   busy,
   error
 }: {
   status: string;
   provider: string;
   model: string;
+  authSource: string;
   busy: boolean;
   error: string | undefined;
 }): ReactElement {
@@ -70,6 +72,8 @@ export function StatusBar({
         {status}
         {'  '}
         {provider}/{model}
+        {'  '}
+        auth {authSource}
       </Text>
       {error ? <Text color="red">{error}</Text> : null}
     </Box>
