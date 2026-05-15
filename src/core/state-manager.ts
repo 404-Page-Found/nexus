@@ -124,6 +124,18 @@ export class AgentStateManager {
     this.notifyConversationChange();
   }
 
+  public replaceConversation(messages: ChatMessage[]): void {
+    this.update((snapshot) => {
+      snapshot.messages = structuredClone(messages);
+      snapshot.status = 'Idle';
+      snapshot.isBusy = false;
+      snapshot.streamingText = '';
+      snapshot.error = undefined;
+    });
+
+    this.notifyConversationChange();
+  }
+
   public replaceConfig(config: AppConfig): void {
     this.update((snapshot) => {
       snapshot.config = config;

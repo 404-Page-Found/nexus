@@ -4,7 +4,14 @@ import { spawnSync } from 'child_process';
 import { AgentStateManager } from '../core/state-manager.js';
 import { runAgentLoop } from '../core/agent-loop.js';
 import { loadConfig } from '../config/persistence.js';
-import { clearTranscript, loadTranscript, saveTranscript } from '../core/transcript-store.js';
+import {
+  archiveTranscript,
+  clearTranscript,
+  listTranscripts as loadSavedTranscripts,
+  loadTranscript,
+  loadTranscriptById,
+  saveTranscript
+} from '../core/transcript-store.js';
 import { createProviderClient } from '../providers/index.js';
 import { ToolRegistry } from '../tools/registry.js';
 
@@ -18,12 +25,24 @@ export interface TuiSession {
   state: AgentStateManager;
   commands: TuiCommand[];
   submitPrompt(prompt: string): Promise<void>;
+  startNewChat(): Promise<void>;
+  listTranscripts(): Promise<TranscriptSummary[]>;
+  openTranscript(transcriptId: string): Promise<void>;
   refreshAuth(): Promise<void>;
   refreshTools(): Promise<void>;
   clearConversation(): void;
   abort(): void;
   executeCommand(commandId: string): Promise<void>;
   dispose(): Promise<void>;
+}
+
+export interface TranscriptSummary {
+  id: string;
+  label: string;
+  messageCount: number;
+  preview: string;
+  updatedAt: string;
+  isCurrent: boolean;
 }
 
 export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
@@ -45,6 +64,10 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
 
     void transcriptWriteQueue.catch(() => undefined);
     return transcriptWriteQueue;
+  };
+
+  const waitForTranscriptWrites = async (): Promise<void> => {
+    await transcriptWriteQueue.catch(() => undefined);
   };
 
   const state = new AgentStateManager(config, {
@@ -189,10 +212,50 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
     }
   };
 
+  const startNewChat = async (): Promise<void> => {
+    if (state.getSnapshot().isBusy) {
+      state.setStatus('Finish the active turn before starting a new chat');
+      return;
+    }
+
+    try {
+      await waitForTranscriptWrites();
+      const currentMessages = state.getSnapshot().messages;
+      await archiveTranscript(currentMessages);
+      state.clearConversation();
+    } catch (error) {
+      state.setError(`Failed to start a new chat: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
+  const openTranscript = async (transcriptId: string): Promise<void> => {
+    if (state.getSnapshot().isBusy) {
+      state.setStatus('Finish the active turn before opening a transcript');
+      return;
+    }
+
+    try {
+      await waitForTranscriptWrites();
+      const currentMessages = state.getSnapshot().messages;
+      await archiveTranscript(currentMessages);
+      const messages = await loadTranscriptById(transcriptId);
+      state.replaceConversation(messages);
+    } catch (error) {
+      state.setError(`Failed to open transcript: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
+  const listSavedTranscripts = async (): Promise<TranscriptSummary[]> => {
+    await waitForTranscriptWrites();
+    return loadSavedTranscripts();
+  };
+
   const executeCommand = async (commandId: string): Promise<void> => {
     switch (commandId) {
       case 'new-chat':
-        state.clearConversation();
+        await startNewChat();
+        break;
+      case 'browse-transcripts':
         break;
       case 'edit-config':
         if (state.getSnapshot().isBusy) {
@@ -226,7 +289,12 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
       {
         id: 'new-chat',
         label: 'New chat',
-        description: 'Clear the conversation history and saved transcript'
+        description: 'Archive the current conversation and start a clean chat'
+      },
+      {
+        id: 'browse-transcripts',
+        label: 'Browse transcripts',
+        description: 'View saved chats and reopen one without deleting it'
       },
       {
         id: 'edit-config',
@@ -255,6 +323,9 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
       }
     ],
     submitPrompt,
+    startNewChat,
+    listTranscripts: listSavedTranscripts,
+    openTranscript,
     refreshAuth,
     refreshTools,
     clearConversation: () => state.clearConversation(),

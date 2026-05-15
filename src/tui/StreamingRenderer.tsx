@@ -1,6 +1,7 @@
 import { Box, Text } from 'ink';
 import type { ReactElement } from 'react';
 import type { ChatMessage } from '../core/types.js';
+import type { TranscriptSummary } from './session.js';
 
 function roleLabel(role: ChatMessage['role']): string {
   switch (role) {
@@ -109,6 +110,61 @@ export function CommandPalette({
           <Text dimColor>{command.description}</Text>
         </Box>
       ))}
+    </Box>
+  );
+}
+
+function formatTranscriptStamp(isoStamp: string): string {
+  const date = new Date(isoStamp);
+  if (Number.isNaN(date.getTime())) {
+    return 'unknown time';
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  }).format(date);
+}
+
+export function TranscriptBrowser({
+  transcripts,
+  selectedIndex,
+  loading
+}: {
+  transcripts: TranscriptSummary[];
+  selectedIndex: number;
+  loading: boolean;
+}): ReactElement {
+  return (
+    <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor="cyan" paddingX={1}>
+      <Text color="cyan">Transcript browser</Text>
+      <Text dimColor>Use up/down and Enter to reopen a chat. Esc closes this view.</Text>
+      {loading ? (
+        <Box marginTop={1}>
+          <Text>Loading transcripts...</Text>
+        </Box>
+      ) : transcripts.length === 0 ? (
+        <Box marginTop={1}>
+          <Text>No saved transcripts yet.</Text>
+        </Box>
+      ) : (
+        transcripts.map((transcript, index) => (
+          <Box key={transcript.id} flexDirection="column" marginTop={1}>
+            <Text color={index === selectedIndex ? 'yellow' : 'white'}>
+              {index === selectedIndex ? '>' : ' '}
+              {' '}
+              {transcript.label}
+              {transcript.isCurrent ? ' (current)' : ''}
+            </Text>
+            <Text dimColor>
+              {transcript.messageCount} messages
+              {'  '}
+              {formatTranscriptStamp(transcript.updatedAt)}
+            </Text>
+            <Text dimColor>{transcript.preview}</Text>
+          </Box>
+        ))
+      )}
     </Box>
   );
 }

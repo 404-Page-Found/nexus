@@ -35,7 +35,7 @@ Built-in provider presets are available for OpenAI, Anthropic, xAI, Groq, and Mi
 
 ## Conversation history
 
-The TUI restores the last transcript from `~/.agent/history.yaml` on startup. Use the `New chat` command to clear both the in-memory conversation and the saved transcript.
+The TUI restores the last transcript from `~/.agent/history.yaml` on startup. Use `Browse transcripts` to reopen archived chats, and `New chat` to archive the current conversation before starting a clean one.
 
 ## MCP servers
 
