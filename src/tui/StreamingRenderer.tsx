@@ -1,6 +1,6 @@
 import { Box, Text } from 'ink';
 import type { ReactElement } from 'react';
-import type { ChatMessage } from '../core/types.js';
+import type { ChatMessage, McpInspectorSnapshot, McpServerInspection } from '../core/types.js';
 import type { TranscriptSummary } from './session.js';
 
 function roleLabel(role: ChatMessage['role']): string {
@@ -77,6 +77,40 @@ export function StatusBar({
         auth {authSource}
       </Text>
       {error ? <Text color="red">{error}</Text> : null}
+    </Box>
+  );
+}
+
+function statusColor(status: McpServerInspection['status']): 'green' | 'red' | 'gray' {
+  switch (status) {
+    case 'connected':
+      return 'green';
+    case 'error':
+      return 'red';
+    case 'disabled':
+    default:
+      return 'gray';
+  }
+}
+
+export function McpInspectorPanel({ inspector }: { inspector: McpInspectorSnapshot }): ReactElement | null {
+  if (inspector.servers.length === 0) {
+    return null;
+  }
+
+  return (
+    <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor="blue" paddingX={1}>
+      <Text color="blue">MCP inspector</Text>
+      <Text dimColor>MCP tools: {inspector.mcpToolCount}</Text>
+      {inspector.servers.map((server) => (
+        <Box key={server.name} flexDirection="column" marginTop={1}>
+          <Text color={statusColor(server.status)}>
+            {server.name} [{server.transport}] - {server.status === 'error' ? 'failed' : server.status}
+          </Text>
+          {server.tools.length > 0 ? <Text dimColor>tools: {server.tools.slice(0, 5).join(', ')}{server.tools.length > 5 ? ` (+${server.tools.length - 5} more)` : ''}</Text> : null}
+          {server.error ? <Text color="red">{server.error}</Text> : null}
+        </Box>
+      ))}
     </Box>
   );
 }

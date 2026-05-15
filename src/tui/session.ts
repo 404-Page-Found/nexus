@@ -79,6 +79,7 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
   state.setAuthSource(initialProvider.secretSource);
   let tools = new ToolRegistry(activeConfig);
   await tools.refresh();
+  state.setMcpInspector(tools.getMcpInspector());
 
   let activeController: AbortController | null = null;
   let refreshInProgress = false;
@@ -164,6 +165,7 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
         tools = nextTools;
         activeConfig = nextConfig;
         state.replaceConfig(nextConfig);
+        state.setMcpInspector(tools.getMcpInspector());
         state.markIdle(`Loaded ${tools.toProviderTools().length} tools`);
 
         try {
@@ -223,6 +225,7 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
       const currentMessages = state.getSnapshot().messages;
       await archiveTranscript(currentMessages);
       state.clearConversation();
+      state.setMcpInspector(tools.getMcpInspector());
     } catch (error) {
       state.setError(`Failed to start a new chat: ${error instanceof Error ? error.message : String(error)}`);
     }

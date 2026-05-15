@@ -1,4 +1,4 @@
-import type { AppConfig, ChatMessage } from './types.js';
+import type { AppConfig, ChatMessage, McpInspectorSnapshot } from './types.js';
 
 export interface AgentStateSnapshot {
   config: AppConfig;
@@ -8,6 +8,7 @@ export interface AgentStateSnapshot {
   isBusy: boolean;
   streamingText: string;
   error: string | undefined;
+  mcpInspector: McpInspectorSnapshot;
 }
 
 export type ProviderAuthSource = 'env' | 'keychain' | 'file' | 'missing';
@@ -35,7 +36,8 @@ export class AgentStateManager {
       status: 'Idle',
       isBusy: false,
       streamingText: '',
-      error: undefined
+      error: undefined,
+      mcpInspector: { mcpToolCount: 0, servers: [] }
     };
   }
 
@@ -145,6 +147,12 @@ export class AgentStateManager {
   public setAuthSource(authSource: ProviderAuthSource): void {
     this.update((snapshot) => {
       snapshot.authSource = authSource;
+    });
+  }
+
+  public setMcpInspector(inspector: McpInspectorSnapshot): void {
+    this.update((snapshot) => {
+      snapshot.mcpInspector = inspector;
     });
   }
 
