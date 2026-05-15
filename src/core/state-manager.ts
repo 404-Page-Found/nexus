@@ -124,6 +124,7 @@ export class AgentStateManager {
       snapshot.isBusy = false;
       snapshot.streamingText = '';
       snapshot.error = undefined;
+      snapshot.mcpInspector = { loadedToolCount: 0, servers: [] };
     });
 
     this.notifyConversationChange();
@@ -150,7 +151,8 @@ export class AgentStateManager {
   private update(mutator: (snapshot: AgentStateSnapshot) => void): void {
     const nextSnapshot: AgentStateSnapshot = {
       ...this.snapshotValue,
-      messages: [...this.snapshotValue.messages]
+      messages: [...this.snapshotValue.messages],
+      mcpInspector: structuredClone(this.snapshotValue.mcpInspector)
     };
     mutator(nextSnapshot);
     this.snapshotValue = nextSnapshot;

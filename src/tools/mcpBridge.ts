@@ -85,10 +85,10 @@ async function createSession(server: McpServerConfig): Promise<McpSession> {
       }
       cursor = page.nextCursor ?? undefined;
     } while (cursor);
-  } catch {
+  } catch (err) {
     await client.close().catch(() => {});
     await transport.close().catch(() => {});
-    throw;
+    throw err;
   }
 
   return {
