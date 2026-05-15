@@ -239,8 +239,10 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
 
     try {
       await waitForTranscriptWrites();
-      const currentMessages = state.getSnapshot().messages;
-      await archiveTranscript(currentMessages);
+      if (transcriptId !== 'current') {
+        const currentMessages = state.getSnapshot().messages;
+        await archiveTranscript(currentMessages);
+      }
       const messages = await loadTranscriptById(transcriptId);
       state.replaceConversation(messages);
     } catch (error) {

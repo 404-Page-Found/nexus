@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { mkdir, readdir, readFile, stat, unlink, writeFile } from 'fs/promises';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import YAML from 'yaml';
 import { z } from 'zod';
 import { agentHomeDir } from '../config/persistence.js';
@@ -74,11 +74,6 @@ function summarizeTranscript(messages: ChatMessage[]): string {
   return preview.length > 72 ? `${preview.slice(0, 69)}...` : preview;
 }
 
-function transcriptTitle(messages: ChatMessage[]): string {
-  const summary = summarizeTranscript(messages);
-  return summary.length > 48 ? `${summary.slice(0, 45)}...` : summary;
-}
-
 function createArchiveFileName(): string {
   return `${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID()}.yaml`;
 }
@@ -123,6 +118,44 @@ export async function archiveTranscript(messages: ChatMessage[]): Promise<void> 
   await writeFile(join(transcriptArchiveDir, createArchiveFileName()), output, { encoding: 'utf8' });
 }
 
+export async function loadArchivedSummaries(): Promise<Array<{ id: string; messageCount: number; preview: string; updatedAt: string }>> {
+  await ensureTranscriptArchiveDir();
+  const entries = await readdir(transcriptArchiveDir, { withFileTypes: true });
+  const summaries = await Promise.all(
+    entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.yaml'))
+      .map(async (entry) => {
+        const path = join(transcriptArchiveDir, entry.name);
+        try {
+          const [raw, fileStats] = await Promise.all([readFile(path, 'utf8'), stat(path)]);
+          const parsed = YAML.parse(raw) as { messages?: unknown[] };
+          const messages = Array.isArray(parsed.messages) ? parsed.messages : [];
+          if (messages.length === 0) {
+            return null;
+          }
+
+          const firstMeaningful = messages.find(
+            (m) => typeof m === 'object' && m !== null && 'role' in m && (m as { role: string }).role !== 'system'
+          ) as { content?: string } | undefined;
+
+          const content = typeof firstMeaningful?.content === 'string' ? firstMeaningful.content : '';
+          const preview = content.trim().replace(/\s+/g, ' ');
+
+          return {
+            id: entry.name,
+            messageCount: messages.length,
+            preview: preview.length > 72 ? `${preview.slice(0, 69)}...` : (preview || 'Empty transcript'),
+            updatedAt: fileStats.mtime.toISOString()
+          };
+        } catch {
+          return null;
+        }
+      })
+  );
+
+  return summaries.filter((s): s is { id: string; messageCount: number; preview: string; updatedAt: string } => s !== null);
+}
+
 export async function loadArchivedTranscripts(): Promise<Array<{ id: string; messages: ChatMessage[]; updatedAt: string }>> {
   await ensureTranscriptArchiveDir();
   const entries = await readdir(transcriptArchiveDir, { withFileTypes: true });
@@ -156,7 +189,16 @@ export async function loadTranscriptById(id: string): Promise<ChatMessage[]> {
     return loadTranscript();
   }
 
-  return (await readTranscriptFile(join(transcriptArchiveDir, id))) ?? [];
+  if (id.includes('..') || id.includes('/') || id.includes('\\')) {
+    throw new Error(`Invalid transcript id: ${id}`);
+  }
+
+  const resolvedPath = resolve(transcriptArchiveDir, id);
+  if (!resolvedPath.startsWith(resolve(transcriptArchiveDir))) {
+    throw new Error(`Invalid transcript id: ${id}`);
+  }
+
+  return (await readTranscriptFile(resolvedPath)) ?? [];
 }
 
 export async function listTranscripts(): Promise<
@@ -183,12 +225,12 @@ export async function listTranscripts(): Promise<
       ]
     : [];
 
-  const archiveTranscripts = await loadArchivedTranscripts();
+  const archiveTranscripts = await loadArchivedSummaries();
   const archivedSummaries = archiveTranscripts.map((transcript) => ({
     id: transcript.id,
-    label: transcriptTitle(transcript.messages),
-    messageCount: transcript.messages.length,
-    preview: summarizeTranscript(transcript.messages),
+    label: transcript.preview.length > 48 ? `${transcript.preview.slice(0, 45)}...` : transcript.preview,
+    messageCount: transcript.messageCount,
+    preview: transcript.preview,
     updatedAt: transcript.updatedAt,
     isCurrent: false
   }));

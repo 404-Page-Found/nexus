@@ -67,6 +67,11 @@ export function App({ session }: { session: TuiSession }): ReactElement {
 
   useInput((input, key) => {
     if (transcriptBrowserOpen) {
+      if (key.ctrl && input === 'c') {
+        exit();
+        return;
+      }
+
       if (key.escape) {
         setTranscriptBrowserOpen(false);
         return;
@@ -117,13 +122,12 @@ export function App({ session }: { session: TuiSession }): ReactElement {
       if (key.return) {
         const selected = commands[paletteIndex];
         if (selected) {
+          void session.executeCommand(selected.id);
           if (selected.id === 'browse-transcripts') {
             setTranscriptBrowserOpen(true);
-          } else {
-            void session.executeCommand(selected.id);
-            if (selected.id === 'quit') {
-              exit();
-            }
+          }
+          if (selected.id === 'quit') {
+            exit();
           }
         }
         setPaletteOpen(false);
