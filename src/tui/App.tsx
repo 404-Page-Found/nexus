@@ -2,6 +2,7 @@ import { useApp, useInput } from 'ink';
 import type { ReactElement } from 'react';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import type { TuiSession, TranscriptSummary } from './session.js';
+import { CommandAction } from './session.js';
 import { CommandPalette, InputLine, MessageList, McpInspectorPanel, StatusBar, TranscriptBrowser } from './StreamingRenderer.js';
 
 export function App({ session }: { session: TuiSession }): ReactElement {
@@ -124,7 +125,7 @@ export function App({ session }: { session: TuiSession }): ReactElement {
         if (selected) {
           void (async () => {
             const action = await session.executeCommand(selected.id);
-            if (action === 'browse-transcripts') {
+            if (action === CommandAction.BrowseTranscripts) {
               setTranscriptBrowserOpen(true);
             }
           })();

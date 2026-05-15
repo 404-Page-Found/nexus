@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { mkdir, readdir, readFile, stat, unlink, writeFile } from 'fs/promises';
+import { mkdir, readFile, stat, unlink, writeFile } from 'fs/promises';
 import { join, resolve } from 'path';
 import YAML from 'yaml';
 import { z } from 'zod';
@@ -154,6 +154,8 @@ export async function archiveTranscript(messages: ChatMessage[]): Promise<void> 
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       await writeFile(transcriptArchiveIndex, YAML.stringify({ entries: [indexEntry] }, { indent: 2 }), { encoding: 'utf8' });
+    } else {
+      throw new Error(`Failed to update archive index: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 }
@@ -171,35 +173,6 @@ export async function loadArchivedSummaries(): Promise<Array<{ id: string; messa
     debug(`Failed to load archive index: ${error instanceof Error ? error.message : String(error)}`);
     return [];
   }
-}
-
-export async function loadArchivedTranscripts(): Promise<Array<{ id: string; messages: ChatMessage[]; updatedAt: string }>> {
-  await ensureTranscriptArchiveDir();
-  const entries = await readdir(transcriptArchiveDir, { withFileTypes: true });
-  const transcripts = await Promise.all(
-    entries
-      .filter((entry) => entry.isFile() && entry.name.endsWith('.yaml'))
-      .map(async (entry) => {
-        const path = join(transcriptArchiveDir, entry.name);
-        try {
-          const [messages, fileStats] = await Promise.all([readTranscriptFile(path), stat(path)]);
-          if (!messages) {
-            return null;
-          }
-
-          return {
-            id: entry.name,
-            messages,
-            updatedAt: fileStats.mtime.toISOString()
-          };
-        } catch (error) {
-          debug(`Failed to load transcript ${entry.name}: ${error instanceof Error ? error.message : String(error)}`);
-          return null;
-        }
-      })
-  );
-
-  return transcripts.filter((transcript): transcript is { id: string; messages: ChatMessage[]; updatedAt: string } => transcript !== null);
 }
 
 export async function loadTranscriptById(id: string): Promise<ChatMessage[]> {

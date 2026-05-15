@@ -15,10 +15,33 @@ import {
 import { createProviderClient } from '../providers/index.js';
 import { ToolRegistry } from '../tools/registry.js';
 
+function messagesMatch(left: ChatMessage[], right: ChatMessage[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  for (let index = 0; index < left.length; index += 1) {
+    const leftMessage = left[index]!;
+    const rightMessage = right[index]!;
+    if (
+      leftMessage.role !== rightMessage.role ||
+      leftMessage.content !== rightMessage.content
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 export interface TuiCommand {
   id: string;
   label: string;
   description: string;
+}
+
+export enum CommandAction {
+  BrowseTranscripts = 'browse-transcripts'
 }
 
 export interface TuiSession {
@@ -32,7 +55,7 @@ export interface TuiSession {
   refreshTools(): Promise<void>;
   clearConversation(): void;
   abort(): void;
-  executeCommand(commandId: string): Promise<string | undefined>;
+  executeCommand(commandId: string): Promise<CommandAction | undefined>;
   dispose(): Promise<void>;
 }
 
@@ -239,11 +262,11 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
 
     try {
       await waitForTranscriptWrites();
-      if (transcriptId !== 'current') {
-        const currentMessages = state.getSnapshot().messages;
+      const messages = await loadTranscriptById(transcriptId);
+      const currentMessages = state.getSnapshot().messages;
+      if (transcriptId !== 'current' && !messagesMatch(currentMessages, messages)) {
         await archiveTranscript(currentMessages);
       }
-      const messages = await loadTranscriptById(transcriptId);
       state.replaceConversation(messages);
     } catch (error) {
       state.setError(`Failed to open transcript: ${error instanceof Error ? error.message : String(error)}`);
@@ -255,13 +278,13 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
     return loadSavedTranscripts();
   };
 
-  const executeCommand = async (commandId: string): Promise<string | undefined> => {
+  const executeCommand = async (commandId: string): Promise<CommandAction | undefined> => {
     switch (commandId) {
       case 'new-chat':
         await startNewChat();
         break;
       case 'browse-transcripts':
-        return 'browse-transcripts';
+        return CommandAction.BrowseTranscripts;
       case 'edit-config':
         if (state.getSnapshot().isBusy) {
           state.setStatus('Finish the active turn before editing config');
