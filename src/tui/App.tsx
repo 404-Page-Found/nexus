@@ -122,10 +122,12 @@ export function App({ session }: { session: TuiSession }): ReactElement {
       if (key.return) {
         const selected = commands[paletteIndex];
         if (selected) {
-          void session.executeCommand(selected.id);
-          if (selected.id === 'browse-transcripts') {
-            setTranscriptBrowserOpen(true);
-          }
+          void (async () => {
+            const action = await session.executeCommand(selected.id);
+            if (action === 'browse-transcripts') {
+              setTranscriptBrowserOpen(true);
+            }
+          })();
           if (selected.id === 'quit') {
             exit();
           }

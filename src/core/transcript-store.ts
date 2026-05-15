@@ -6,6 +6,14 @@ import { z } from 'zod';
 import { agentHomeDir } from '../config/persistence.js';
 import type { ChatMessage } from './types.js';
 
+const DEBUG = !!process.env.DEBUG?.includes('opencode:transcripts');
+
+function debug(message: string): void {
+  if (DEBUG) {
+    process.stderr.write(`[transcripts] ${message}\n`);
+  }
+}
+
 const toolCallSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -26,6 +34,18 @@ const transcriptSchema = z.object({
 
 export const transcriptPath = join(agentHomeDir, 'history.yaml');
 const transcriptArchiveDir = join(agentHomeDir, 'history');
+const transcriptArchiveIndex = join(agentHomeDir, 'history', '.index.yaml');
+
+const archiveIndexEntrySchema = z.object({
+  id: z.string(),
+  messageCount: z.number(),
+  preview: z.string(),
+  updatedAt: z.string()
+});
+
+const archiveIndexSchema = z.object({
+  entries: z.array(archiveIndexEntrySchema)
+});
 
 async function ensureAgentHome(): Promise<void> {
   await mkdir(agentHomeDir, { recursive: true });
@@ -98,7 +118,7 @@ export async function loadTranscript(): Promise<ChatMessage[]> {
       return [];
     }
 
-    return [];
+    throw new Error(`Failed to read transcript: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -114,46 +134,43 @@ export async function archiveTranscript(messages: ChatMessage[]): Promise<void> 
   }
 
   await ensureTranscriptArchiveDir();
+  const fileName = createArchiveFileName();
   const output = YAML.stringify({ messages }, { indent: 2 });
-  await writeFile(join(transcriptArchiveDir, createArchiveFileName()), output, { encoding: 'utf8' });
+  await writeFile(join(transcriptArchiveDir, fileName), output, { encoding: 'utf8' });
+
+  const preview = summarizeTranscript(messages);
+  const indexEntry = {
+    id: fileName,
+    messageCount: messages.length,
+    preview,
+    updatedAt: new Date().toISOString()
+  };
+
+  try {
+    const raw = await readFile(transcriptArchiveIndex, 'utf8');
+    const index = archiveIndexSchema.parse(YAML.parse(raw));
+    index.entries.push(indexEntry);
+    await writeFile(transcriptArchiveIndex, YAML.stringify(index, { indent: 2 }), { encoding: 'utf8' });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      await writeFile(transcriptArchiveIndex, YAML.stringify({ entries: [indexEntry] }, { indent: 2 }), { encoding: 'utf8' });
+    }
+  }
 }
 
 export async function loadArchivedSummaries(): Promise<Array<{ id: string; messageCount: number; preview: string; updatedAt: string }>> {
   await ensureTranscriptArchiveDir();
-  const entries = await readdir(transcriptArchiveDir, { withFileTypes: true });
-  const summaries = await Promise.all(
-    entries
-      .filter((entry) => entry.isFile() && entry.name.endsWith('.yaml'))
-      .map(async (entry) => {
-        const path = join(transcriptArchiveDir, entry.name);
-        try {
-          const [raw, fileStats] = await Promise.all([readFile(path, 'utf8'), stat(path)]);
-          const parsed = YAML.parse(raw) as { messages?: unknown[] };
-          const messages = Array.isArray(parsed.messages) ? parsed.messages : [];
-          if (messages.length === 0) {
-            return null;
-          }
-
-          const firstMeaningful = messages.find(
-            (m) => typeof m === 'object' && m !== null && 'role' in m && (m as { role: string }).role !== 'system'
-          ) as { content?: string } | undefined;
-
-          const content = typeof firstMeaningful?.content === 'string' ? firstMeaningful.content : '';
-          const preview = content.trim().replace(/\s+/g, ' ');
-
-          return {
-            id: entry.name,
-            messageCount: messages.length,
-            preview: preview.length > 72 ? `${preview.slice(0, 69)}...` : (preview || 'Empty transcript'),
-            updatedAt: fileStats.mtime.toISOString()
-          };
-        } catch {
-          return null;
-        }
-      })
-  );
-
-  return summaries.filter((s): s is { id: string; messageCount: number; preview: string; updatedAt: string } => s !== null);
+  try {
+    const raw = await readFile(transcriptArchiveIndex, 'utf8');
+    const index = archiveIndexSchema.parse(YAML.parse(raw));
+    return index.entries;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return [];
+    }
+    debug(`Failed to load archive index: ${error instanceof Error ? error.message : String(error)}`);
+    return [];
+  }
 }
 
 export async function loadArchivedTranscripts(): Promise<Array<{ id: string; messages: ChatMessage[]; updatedAt: string }>> {
@@ -175,7 +192,8 @@ export async function loadArchivedTranscripts(): Promise<Array<{ id: string; mes
             messages,
             updatedAt: fileStats.mtime.toISOString()
           };
-        } catch {
+        } catch (error) {
+          debug(`Failed to load transcript ${entry.name}: ${error instanceof Error ? error.message : String(error)}`);
           return null;
         }
       })
@@ -186,11 +204,7 @@ export async function loadArchivedTranscripts(): Promise<Array<{ id: string; mes
 
 export async function loadTranscriptById(id: string): Promise<ChatMessage[]> {
   if (id === 'current') {
-    return loadTranscript();
-  }
-
-  if (id.includes('..') || id.includes('/') || id.includes('\\')) {
-    throw new Error(`Invalid transcript id: ${id}`);
+    return await loadTranscript();
   }
 
   const resolvedPath = resolve(transcriptArchiveDir, id);
@@ -198,7 +212,12 @@ export async function loadTranscriptById(id: string): Promise<ChatMessage[]> {
     throw new Error(`Invalid transcript id: ${id}`);
   }
 
-  return (await readTranscriptFile(resolvedPath)) ?? [];
+  try {
+    const messages = await readTranscriptFile(resolvedPath);
+    return messages ?? [];
+  } catch (error) {
+    throw new Error(`Failed to read transcript "${id}": ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 export async function listTranscripts(): Promise<

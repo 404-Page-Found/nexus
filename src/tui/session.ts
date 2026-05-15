@@ -32,7 +32,7 @@ export interface TuiSession {
   refreshTools(): Promise<void>;
   clearConversation(): void;
   abort(): void;
-  executeCommand(commandId: string): Promise<void>;
+  executeCommand(commandId: string): Promise<string | undefined>;
   dispose(): Promise<void>;
 }
 
@@ -255,13 +255,13 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
     return loadSavedTranscripts();
   };
 
-  const executeCommand = async (commandId: string): Promise<void> => {
+  const executeCommand = async (commandId: string): Promise<string | undefined> => {
     switch (commandId) {
       case 'new-chat':
         await startNewChat();
         break;
       case 'browse-transcripts':
-        break;
+        return 'browse-transcripts';
       case 'edit-config':
         if (state.getSnapshot().isBusy) {
           state.setStatus('Finish the active turn before editing config');
