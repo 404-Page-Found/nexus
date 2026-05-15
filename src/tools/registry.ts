@@ -1,4 +1,10 @@
-import type { AppConfig, ToolExecutionContext, ToolResult, ToolSpec } from '../core/types.js';
+import type {
+  AppConfig,
+  McpInspectorSnapshot,
+  ToolExecutionContext,
+  ToolResult,
+  ToolSpec
+} from '../core/types.js';
 import { resolveNativeTools } from './nativeTools.js';
 import { McpBridge } from './mcpBridge.js';
 
@@ -14,6 +20,11 @@ export class ToolRegistry {
 
   private mcpTools: RegisteredTool[] = [];
 
+  private mcpInspector: McpInspectorSnapshot = {
+    loadedToolCount: 0,
+    servers: []
+  };
+
   public constructor(private readonly config: AppConfig) {
     this.nativeTools = resolveNativeTools(config.tools.native).map((tool) => ({
       spec: tool.spec,
@@ -22,11 +33,17 @@ export class ToolRegistry {
   }
 
   public async refresh(): Promise<void> {
-    const specs = await this.mcpBridge.refresh(this.config.tools.mcpServers);
+    const result = await this.mcpBridge.refresh(this.config.tools.mcpServers);
+    const specs = result.specs;
+    this.mcpInspector = result.inspector;
     this.mcpTools = specs.map((spec) => ({
       spec,
       execute: (input, context) => this.mcpBridge.invoke(spec.name, input, context)
     }));
+  }
+
+  public getMcpInspector(): McpInspectorSnapshot {
+    return this.mcpInspector;
   }
 
   public toProviderTools(): ToolSpec[] {

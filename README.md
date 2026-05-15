@@ -40,3 +40,4 @@ The TUI restores the last transcript from `~/.agent/history.yaml` on startup. Us
 ## MCP servers
 
 Add stdio or streamable HTTP MCP servers in the setup wizard. The agent will discover tools at startup and prefix remote tool names with the server name.
+The TUI also shows an MCP inspector with each configured server, its loaded tools, and any connection errors, and `Refresh tools` reloads that view after config changes.

@@ -1,6 +1,6 @@
 import { Box, Text } from 'ink';
 import type { ReactElement } from 'react';
-import type { ChatMessage } from '../core/types.js';
+import type { ChatMessage, McpInspectorSnapshot, McpServerInspection } from '../core/types.js';
 
 function roleLabel(role: ChatMessage['role']): string {
   switch (role) {
@@ -76,6 +76,49 @@ export function StatusBar({
         auth {authSource}
       </Text>
       {error ? <Text color="red">{error}</Text> : null}
+    </Box>
+  );
+}
+
+function statusColor(status: McpServerInspection['status']): 'green' | 'red' | 'gray' {
+  switch (status) {
+    case 'connected':
+      return 'green';
+    case 'error':
+      return 'red';
+    case 'disabled':
+    default:
+      return 'gray';
+  }
+}
+
+function statusLabel(status: McpServerInspection['status']): string {
+  switch (status) {
+    case 'connected':
+      return 'connected';
+    case 'error':
+      return 'failed';
+    case 'disabled':
+    default:
+      return 'disabled';
+  }
+}
+
+export function McpInspectorPanel({ inspector }: { inspector: McpInspectorSnapshot }): ReactElement {
+  return (
+    <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor="blue" paddingX={1}>
+      <Text color="blue">MCP inspector</Text>
+      <Text dimColor>Loaded tools: {inspector.loadedToolCount}</Text>
+      {inspector.servers.length === 0 ? <Text dimColor>No MCP servers configured.</Text> : null}
+      {inspector.servers.map((server) => (
+        <Box key={server.name} flexDirection="column" marginTop={1}>
+          <Text color={statusColor(server.status)}>
+            {server.name} [{server.transport}] - {statusLabel(server.status)}
+          </Text>
+          {server.tools.length > 0 ? <Text dimColor>tools: {server.tools.join(', ')}</Text> : null}
+          {server.error ? <Text color="red">{server.error}</Text> : null}
+        </Box>
+      ))}
     </Box>
   );
 }

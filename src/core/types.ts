@@ -36,6 +36,22 @@ export interface ToolResult {
   raw?: unknown;
 }
 
+export type McpServerStatus = 'connected' | 'disabled' | 'error';
+
+export interface McpServerInspection {
+  name: string;
+  transport: 'stdio' | 'http';
+  enabled: boolean;
+  status: McpServerStatus;
+  tools: string[];
+  error?: string;
+}
+
+export interface McpInspectorSnapshot {
+  loadedToolCount: number;
+  servers: McpServerInspection[];
+}
+
 export interface ToolExecutionContext {
   config: AppConfig;
   signal?: AbortSignal;

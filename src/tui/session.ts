@@ -56,6 +56,7 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
   state.setAuthSource(initialProvider.secretSource);
   let tools = new ToolRegistry(activeConfig);
   await tools.refresh();
+  state.setMcpInspector(tools.getMcpInspector());
 
   let activeController: AbortController | null = null;
   let refreshInProgress = false;
@@ -135,12 +136,14 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
         nextTools = new ToolRegistry(nextConfig);
 
         await nextTools.refresh();
-
+        // Keep the existing registry active until the provider reload succeeds.
+        // That avoids swapping in a half-updated session if auth refresh fails.
         await reloadProvider(nextConfig);
 
         tools = nextTools;
         activeConfig = nextConfig;
         state.replaceConfig(nextConfig);
+        state.setMcpInspector(tools.getMcpInspector());
         state.markIdle(`Loaded ${tools.toProviderTools().length} tools`);
 
         try {
@@ -241,7 +244,7 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
       {
         id: 'refresh-tools',
         label: 'Refresh tools',
-        description: 'Reconnect MCP servers, reload the tool list, and re-resolve provider auth'
+        description: 'Reload config, refresh MCP servers and tools, re-resolve provider auth, and update the inspector'
       },
       {
         id: 'abort',

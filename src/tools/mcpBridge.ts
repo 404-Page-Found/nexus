@@ -1,13 +1,21 @@
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import type { ToolExecutionContext, ToolResult, ToolSpec, McpServerConfig } from '../core/types.js';
+import type {
+  McpInspectorSnapshot,
+  McpServerConfig,
+  McpServerInspection,
+  ToolExecutionContext,
+  ToolResult,
+  ToolSpec
+} from '../core/types.js';
 
 interface McpSession {
   server: McpServerConfig;
   client: Client;
   transport: StdioClientTransport | StreamableHTTPClientTransport;
   toolNames: Map<string, string>;
+  tools: string[];
 }
 
 function stringifyToolContent(content: unknown): string {
@@ -65,12 +73,14 @@ async function createSession(server: McpServerConfig): Promise<McpSession> {
   await client.connect(transport as unknown as Parameters<typeof client.connect>[0]);
 
   const toolNames = new Map<string, string>();
+  const tools: string[] = [];
   let cursor: string | undefined;
 
   do {
     const page = await client.listTools({ cursor });
     for (const tool of page.tools) {
       toolNames.set(`${server.name}.${tool.name}`, tool.name);
+      tools.push(tool.name);
     }
     cursor = page.nextCursor ?? undefined;
   } while (cursor);
@@ -79,24 +89,63 @@ async function createSession(server: McpServerConfig): Promise<McpSession> {
     server,
     client,
     transport,
-    toolNames
+    toolNames,
+    tools
   };
+}
+
+async function disposeSession(session: McpSession): Promise<void> {
+  try {
+    await session.client.close();
+  } catch {
+    debugMcpBridge(`MCP session close failed for ${session.server.name}`);
+    // Best-effort cleanup; the refreshed sessions are already active.
+  }
+
+  try {
+    await session.transport.close();
+  } catch {
+    debugMcpBridge(`MCP transport close failed for ${session.server.name}`);
+    // Best-effort cleanup; transport shutdown should not block refresh or exit.
+  }
+}
+
+function debugMcpBridge(message: string): void {
+  if (process.env.NODE_ENV !== 'production') {
+    console.debug(message);
+  }
+}
+
+export interface McpRefreshResult {
+  inspector: McpInspectorSnapshot;
+  specs: ToolSpec[];
 }
 
 export class McpBridge {
   private readonly sessions = new Map<string, McpSession>();
 
-  public async refresh(servers: McpServerConfig[]): Promise<ToolSpec[]> {
-    const enabledServers = servers.filter((server) => server.enabled ?? true);
+  public async refresh(servers: McpServerConfig[]): Promise<McpRefreshResult> {
     const specs: ToolSpec[] = [];
     const nextSessions = new Map<string, McpSession>();
+    const inspectedServers: McpServerInspection[] = [];
 
-    try {
-      for (const server of enabledServers) {
-        if (!server.name.trim()) {
-          continue;
-        }
+    for (const server of servers) {
+      if (server.enabled === false) {
+        inspectedServers.push({
+          name: server.name,
+          transport: server.transport,
+          enabled: false,
+          status: 'disabled',
+          tools: []
+        });
+        continue;
+      }
 
+      if (!server.name.trim()) {
+        continue;
+      }
+
+      try {
         const session = await createSession(server);
         nextSessions.set(server.name, session);
 
@@ -110,34 +159,43 @@ export class McpBridge {
             }
           });
         }
-      }
 
-      const oldSessions = [...this.sessions.values()];
-      this.sessions.clear();
-      for (const [serverName, session] of nextSessions.entries()) {
-        this.sessions.set(serverName, session);
+        inspectedServers.push({
+          name: server.name,
+          transport: server.transport,
+          enabled: true,
+          status: 'connected',
+          tools: session.tools
+        });
+      } catch (error) {
+        inspectedServers.push({
+          name: server.name,
+          transport: server.transport,
+          enabled: true,
+          status: 'error',
+          tools: [],
+          error: error instanceof Error ? error.message : String(error)
+        });
       }
-
-      for (const session of oldSessions) {
-        try {
-          await session.client.close();
-        } finally {
-          await session.transport.close();
-        }
-      }
-
-      return specs;
-    } catch (error) {
-      for (const session of nextSessions.values()) {
-        try {
-          await session.client.close();
-        } finally {
-          await session.transport.close();
-        }
-      }
-
-      throw error;
     }
+
+    const oldSessions = [...this.sessions.values()];
+    this.sessions.clear();
+    for (const [serverName, session] of nextSessions.entries()) {
+      this.sessions.set(serverName, session);
+    }
+
+    for (const session of oldSessions) {
+      await disposeSession(session);
+    }
+
+    return {
+      inspector: {
+        loadedToolCount: specs.length,
+        servers: inspectedServers
+      },
+      specs
+    };
   }
 
   public async invoke(name: string, input: unknown, _context: ToolExecutionContext): Promise<ToolResult> {
@@ -165,11 +223,7 @@ export class McpBridge {
     this.sessions.clear();
 
     for (const session of sessions) {
-      try {
-        await session.client.close();
-      } finally {
-        await session.transport.close();
-      }
+      await disposeSession(session);
     }
   }
 }
