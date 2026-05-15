@@ -70,13 +70,13 @@ async function createSession(server: McpServerConfig): Promise<McpSession> {
     });
   }
 
-  await client.connect(transport as unknown as Parameters<typeof client.connect>[0]);
-
-  const toolNames = new Map<string, string>();
-  const tools: string[] = [];
-  let cursor: string | undefined;
-
   try {
+    await client.connect(transport as unknown as Parameters<typeof client.connect>[0]);
+
+    const toolNames = new Map<string, string>();
+    const tools: string[] = [];
+    let cursor: string | undefined;
+
     do {
       const page = await client.listTools({ cursor });
       for (const tool of page.tools) {

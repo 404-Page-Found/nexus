@@ -43,7 +43,7 @@ export class ToolRegistry {
   }
 
   public getMcpInspector(): McpInspectorSnapshot {
-    return this.mcpInspector;
+    return structuredClone(this.mcpInspector);
   }
 
   public toProviderTools(): ToolSpec[] {
