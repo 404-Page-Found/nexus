@@ -196,6 +196,7 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
     switch (commandId) {
       case 'new-chat':
         state.clearConversation();
+        state.setMcpInspector(tools.getMcpInspector());
         break;
       case 'edit-config':
         if (state.getSnapshot().isBusy) {

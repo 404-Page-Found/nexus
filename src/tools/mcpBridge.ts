@@ -65,7 +65,11 @@ async function createSession(server: McpServerConfig): Promise<McpSession> {
       ...(server.env ? { env: server.env } : {})
     });
   } else {
-    transport = new StreamableHTTPClientTransport(new URL(server.url ?? ''), {
+    if (!server.url) {
+      throw new Error(`HTTP server "${server.name}" is missing a URL`);
+    }
+
+    transport = new StreamableHTTPClientTransport(new URL(server.url), {
       ...(server.headers ? { requestInit: { headers: server.headers } } : {})
     });
   }
