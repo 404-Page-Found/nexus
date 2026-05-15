@@ -2,7 +2,7 @@ import { useApp, useInput } from 'ink';
 import type { ReactElement } from 'react';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import type { TuiSession } from './session.js';
-import { CommandPalette, InputLine, MessageList, StatusBar } from './StreamingRenderer.js';
+import { CommandPalette, InputLine, MessageList, McpInspectorPanel, StatusBar } from './StreamingRenderer.js';
 
 export function App({ session }: { session: TuiSession }): ReactElement {
   const { exit } = useApp();
@@ -98,6 +98,7 @@ export function App({ session }: { session: TuiSession }): ReactElement {
         busy={snapshot.isBusy}
         error={snapshot.error}
       />
+      <McpInspectorPanel inspector={snapshot.mcpInspector} />
       <InputLine draft={draft} />
       {paletteOpen ? <CommandPalette commands={commands} selectedIndex={paletteIndex} /> : null}
     </>
