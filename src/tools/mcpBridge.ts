@@ -110,12 +110,14 @@ async function disposeSession(session: McpSession): Promise<void> {
     await session.client.close();
   } catch {
     debugMcpBridge(`MCP session close failed for ${session.server.name}`);
+    // Best-effort cleanup; the refreshed sessions are already active.
   }
 
   try {
     await session.transport.close();
   } catch {
     debugMcpBridge(`MCP transport close failed for ${session.server.name}`);
+    // Best-effort cleanup; transport shutdown should not block refresh or exit.
   }
 }
 

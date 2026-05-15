@@ -37,7 +37,10 @@ export class AgentStateManager {
       isBusy: false,
       streamingText: '',
       error: undefined,
-      mcpInspector: { mcpToolCount: 0, servers: [] }
+      mcpInspector: {
+        mcpToolCount: 0,
+        servers: []
+      }
     };
   }
 
@@ -121,6 +124,7 @@ export class AgentStateManager {
       snapshot.isBusy = false;
       snapshot.streamingText = '';
       snapshot.error = undefined;
+      snapshot.mcpInspector = { mcpToolCount: 0, servers: [] };
     });
 
     this.notifyConversationChange();
@@ -144,22 +148,23 @@ export class AgentStateManager {
     });
   }
 
+  public setMcpInspector(mcpInspector: McpInspectorSnapshot): void {
+    this.update((snapshot) => {
+      snapshot.mcpInspector = structuredClone(mcpInspector);
+    });
+  }
+
   public setAuthSource(authSource: ProviderAuthSource): void {
     this.update((snapshot) => {
       snapshot.authSource = authSource;
     });
   }
 
-  public setMcpInspector(inspector: McpInspectorSnapshot): void {
-    this.update((snapshot) => {
-      snapshot.mcpInspector = inspector;
-    });
-  }
-
   private update(mutator: (snapshot: AgentStateSnapshot) => void): void {
     const nextSnapshot: AgentStateSnapshot = {
       ...this.snapshotValue,
-      messages: [...this.snapshotValue.messages]
+      messages: [...this.snapshotValue.messages],
+      mcpInspector: structuredClone(this.snapshotValue.mcpInspector)
     };
     mutator(nextSnapshot);
     this.snapshotValue = nextSnapshot;
