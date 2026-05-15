@@ -70,11 +70,12 @@ async function createSession(server: McpServerConfig): Promise<McpSession> {
     });
   }
 
+  const toolNames = new Map<string, string>();
+  const tools: string[] = [];
+
   try {
     await client.connect(transport as unknown as Parameters<typeof client.connect>[0]);
 
-    const toolNames = new Map<string, string>();
-    const tools: string[] = [];
     let cursor: string | undefined;
 
     do {
@@ -199,7 +200,7 @@ export class McpBridge {
 
     return {
       inspector: {
-        loadedToolCount: specs.length,
+        mcpToolCount: specs.length,
         servers: inspectedServers
       },
       specs

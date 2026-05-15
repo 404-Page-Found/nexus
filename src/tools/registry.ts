@@ -21,7 +21,7 @@ export class ToolRegistry {
   private mcpTools: RegisteredTool[] = [];
 
   private mcpInspector: McpInspectorSnapshot = {
-    loadedToolCount: 0,
+    mcpToolCount: 0,
     servers: []
   };
 

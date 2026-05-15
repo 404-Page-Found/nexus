@@ -48,7 +48,7 @@ export interface McpServerInspection {
 }
 
 export interface McpInspectorSnapshot {
-  loadedToolCount: number;
+  mcpToolCount: number;
   servers: McpServerInspection[];
 }
 

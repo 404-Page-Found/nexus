@@ -38,7 +38,7 @@ export class AgentStateManager {
       streamingText: '',
       error: undefined,
       mcpInspector: {
-        loadedToolCount: 0,
+        mcpToolCount: 0,
         servers: []
       }
     };
@@ -124,7 +124,7 @@ export class AgentStateManager {
       snapshot.isBusy = false;
       snapshot.streamingText = '';
       snapshot.error = undefined;
-      snapshot.mcpInspector = { loadedToolCount: 0, servers: [] };
+      snapshot.mcpInspector = { mcpToolCount: 0, servers: [] };
     });
 
     this.notifyConversationChange();

@@ -92,18 +92,6 @@ function statusColor(status: McpServerInspection['status']): 'green' | 'red' | '
   }
 }
 
-function statusLabel(status: McpServerInspection['status']): string {
-  switch (status) {
-    case 'connected':
-      return 'connected';
-    case 'error':
-      return 'failed';
-    case 'disabled':
-    default:
-      return 'disabled';
-  }
-}
-
 export function McpInspectorPanel({ inspector }: { inspector: McpInspectorSnapshot }): ReactElement | null {
   if (inspector.servers.length === 0) {
     return null;
@@ -112,13 +100,13 @@ export function McpInspectorPanel({ inspector }: { inspector: McpInspectorSnapsh
   return (
     <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor="blue" paddingX={1}>
       <Text color="blue">MCP inspector</Text>
-      <Text dimColor>Loaded tools: {inspector.loadedToolCount}</Text>
+      <Text dimColor>MCP tools: {inspector.mcpToolCount}</Text>
       {inspector.servers.map((server) => (
         <Box key={server.name} flexDirection="column" marginTop={1}>
           <Text color={statusColor(server.status)}>
-            {server.name} [{server.transport}] - {statusLabel(server.status)}
+            {server.name} [{server.transport}] - {server.status === 'error' ? 'failed' : server.status}
           </Text>
-          {server.tools.length > 0 ? <Text dimColor>tools: {server.tools.join(', ')}</Text> : null}
+          {server.tools.length > 0 ? <Text dimColor>tools: {server.tools.slice(0, 5).join(', ')}{server.tools.length > 5 ? ` (+${server.tools.length - 5} more)` : ''}</Text> : null}
           {server.error ? <Text color="red">{server.error}</Text> : null}
         </Box>
       ))}
