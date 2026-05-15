@@ -76,14 +76,20 @@ async function createSession(server: McpServerConfig): Promise<McpSession> {
   const tools: string[] = [];
   let cursor: string | undefined;
 
-  do {
-    const page = await client.listTools({ cursor });
-    for (const tool of page.tools) {
-      toolNames.set(`${server.name}.${tool.name}`, tool.name);
-      tools.push(tool.name);
-    }
-    cursor = page.nextCursor ?? undefined;
-  } while (cursor);
+  try {
+    do {
+      const page = await client.listTools({ cursor });
+      for (const tool of page.tools) {
+        toolNames.set(`${server.name}.${tool.name}`, tool.name);
+        tools.push(tool.name);
+      }
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor);
+  } catch {
+    await client.close().catch(() => {});
+    await transport.close().catch(() => {});
+    throw;
+  }
 
   return {
     server,
@@ -130,6 +136,10 @@ export class McpBridge {
     const inspectedServers: McpServerInspection[] = [];
 
     for (const server of servers) {
+      if (!server.name.trim()) {
+        continue;
+      }
+
       if (server.enabled === false) {
         inspectedServers.push({
           name: server.name,
@@ -138,10 +148,6 @@ export class McpBridge {
           status: 'disabled',
           tools: []
         });
-        continue;
-      }
-
-      if (!server.name.trim()) {
         continue;
       }
 
