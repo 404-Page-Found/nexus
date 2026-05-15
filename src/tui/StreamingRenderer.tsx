@@ -104,12 +104,15 @@ function statusLabel(status: McpServerInspection['status']): string {
   }
 }
 
-export function McpInspectorPanel({ inspector }: { inspector: McpInspectorSnapshot }): ReactElement {
+export function McpInspectorPanel({ inspector }: { inspector: McpInspectorSnapshot }): ReactElement | null {
+  if (inspector.servers.length === 0) {
+    return null;
+  }
+
   return (
     <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor="blue" paddingX={1}>
       <Text color="blue">MCP inspector</Text>
       <Text dimColor>Loaded tools: {inspector.loadedToolCount}</Text>
-      {inspector.servers.length === 0 ? <Text dimColor>No MCP servers configured.</Text> : null}
       {inspector.servers.map((server) => (
         <Box key={server.name} flexDirection="column" marginTop={1}>
           <Text color={statusColor(server.status)}>

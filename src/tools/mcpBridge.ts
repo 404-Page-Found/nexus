@@ -116,9 +116,11 @@ async function disposeSession(session: McpSession): Promise<void> {
   }
 }
 
+const DEBUG = !!process.env.DEBUG?.includes('opencode:mcp');
+
 function debugMcpBridge(message: string): void {
-  if (process.env.NODE_ENV !== 'production') {
-    console.debug(message);
+  if (DEBUG) {
+    process.stderr.write(`[mcp] ${message}\n`);
   }
 }
 
