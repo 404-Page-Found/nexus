@@ -250,6 +250,18 @@ export async function runConfigWizard(seedConfig?: AppConfig): Promise<AppConfig
     process.exit(0);
   }
 
+  const systemPrompt = await text({
+    message: 'System prompt',
+    initialValue: defaults.systemPrompt
+  });
+
+  if (isCancel(systemPrompt)) {
+    cancel('Setup cancelled');
+    process.exit(0);
+  }
+
+  const nextSystemPrompt = systemPrompt.trim() || defaults.systemPrompt;
+
   let baseUrl: string | undefined;
   if (provider === 'openai-compatible') {
     const compatibleBaseUrl = await text({
@@ -322,6 +334,7 @@ export async function runConfigWizard(seedConfig?: AppConfig): Promise<AppConfig
       ...(defaults.provider.temperature !== undefined ? { temperature: defaults.provider.temperature } : {}),
       ...(defaults.provider.maxTokens !== undefined ? { maxTokens: defaults.provider.maxTokens } : {})
     },
+    systemPrompt: nextSystemPrompt,
     tools: {
       native: nativeTools as string[],
       mcpServers

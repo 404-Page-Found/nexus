@@ -1,4 +1,3 @@
-import { DEFAULT_SYSTEM_PROMPT } from './prompts.js';
 import type { AppConfig, ChatMessage, ToolCall, ToolResult } from './types.js';
 import type { AgentStateManager } from './state-manager.js';
 import type { LLMClient } from '../providers/types.js';
@@ -26,8 +25,8 @@ function formatError(error: unknown): string {
   return String(error);
 }
 
-function buildConversation(messages: ChatMessage[]): ChatMessage[] {
-  return [{ role: 'system', content: DEFAULT_SYSTEM_PROMPT }, ...messages];
+function buildConversation(systemPrompt: string, messages: ChatMessage[]): ChatMessage[] {
+  return [{ role: 'system', content: systemPrompt }, ...messages];
 }
 
 function toolResultMessage(toolCall: ToolCall, result: ToolResult): ChatMessage {
@@ -47,7 +46,7 @@ export async function runAgentLoop(dependencies: AgentLoopDependencies, userProm
   state.appendMessage({ role: 'user', content: userPrompt });
   state.markBusy(`Thinking with ${config.provider.kind}/${config.provider.model}`);
 
-  let conversation = buildConversation(state.getSnapshot().messages);
+  let conversation = buildConversation(config.systemPrompt, state.getSnapshot().messages);
 
   try {
     for (let round = 0; round < maxRounds; round += 1) {
@@ -65,7 +64,7 @@ export async function runAgentLoop(dependencies: AgentLoopDependencies, userProm
 
       state.clearStreamingText();
       state.appendMessage(completion.message);
-      conversation = buildConversation([...state.getSnapshot().messages]);
+      conversation = buildConversation(config.systemPrompt, [...state.getSnapshot().messages]);
 
       if (completion.toolCalls.length === 0) {
         state.markIdle('Idle');
@@ -87,7 +86,7 @@ export async function runAgentLoop(dependencies: AgentLoopDependencies, userProm
           ...(signal ? { signal } : {})
         });
         state.appendMessage(toolResultMessage(call, result));
-        conversation = buildConversation([...state.getSnapshot().messages]);
+        conversation = buildConversation(config.systemPrompt, [...state.getSnapshot().messages]);
       }
     }
 
