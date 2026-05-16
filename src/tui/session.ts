@@ -4,9 +4,55 @@ import { spawnSync } from 'child_process';
 import { AgentStateManager } from '../core/state-manager.js';
 import { runAgentLoop } from '../core/agent-loop.js';
 import { loadConfig } from '../config/persistence.js';
-import { clearTranscript, loadTranscript, saveTranscript } from '../core/transcript-store.js';
+import {
+  archiveTranscript,
+  clearTranscript,
+  listTranscripts as loadSavedTranscripts,
+  loadTranscript,
+  loadTranscriptById,
+  saveTranscript
+} from '../core/transcript-store.js';
 import { createProviderClient } from '../providers/index.js';
 import { ToolRegistry } from '../tools/registry.js';
+
+function messagesMatch(left: ChatMessage[], right: ChatMessage[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  for (let index = 0; index < left.length; index += 1) {
+    const leftMessage = left[index]!;
+    const rightMessage = right[index]!;
+    if (
+      leftMessage.role !== rightMessage.role ||
+      leftMessage.content !== rightMessage.content ||
+      leftMessage.name !== rightMessage.name ||
+      leftMessage.toolCallId !== rightMessage.toolCallId
+    ) {
+      return false;
+    }
+
+    const leftToolCalls = leftMessage.toolCalls ?? [];
+    const rightToolCalls = rightMessage.toolCalls ?? [];
+    if (leftToolCalls.length !== rightToolCalls.length) {
+      return false;
+    }
+
+    for (let toolCallIndex = 0; toolCallIndex < leftToolCalls.length; toolCallIndex += 1) {
+      const leftToolCall = leftToolCalls[toolCallIndex]!;
+      const rightToolCall = rightToolCalls[toolCallIndex]!;
+      if (
+        leftToolCall.id !== rightToolCall.id ||
+        leftToolCall.name !== rightToolCall.name ||
+        JSON.stringify(leftToolCall.arguments) !== JSON.stringify(rightToolCall.arguments)
+      ) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
 
 export interface TuiCommand {
   id: string;
@@ -14,21 +60,38 @@ export interface TuiCommand {
   description: string;
 }
 
+export enum CommandAction {
+  BrowseTranscripts = 'browse-transcripts'
+}
+
 export interface TuiSession {
   state: AgentStateManager;
   commands: TuiCommand[];
   submitPrompt(prompt: string): Promise<void>;
+  startNewChat(): Promise<void>;
+  listTranscripts(): Promise<TranscriptSummary[]>;
+  openTranscript(transcriptId: string): Promise<void>;
   refreshAuth(): Promise<void>;
   refreshTools(): Promise<void>;
   clearConversation(): void;
   abort(): void;
-  executeCommand(commandId: string): Promise<void>;
+  executeCommand(commandId: string): Promise<CommandAction | undefined>;
   dispose(): Promise<void>;
+}
+
+export interface TranscriptSummary {
+  id: string;
+  label: string;
+  messageCount: number;
+  preview: string;
+  updatedAt: string;
+  isCurrent: boolean;
 }
 
 export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
   const initialMessages = await loadTranscript();
   let transcriptWriteQueue = Promise.resolve();
+  let transcriptArchiveQueue = Promise.resolve();
   let activeConfig = config;
 
   const persistConversation = (messages: ChatMessage[]): Promise<void> => {
@@ -45,6 +108,25 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
 
     void transcriptWriteQueue.catch(() => undefined);
     return transcriptWriteQueue;
+  };
+
+  const waitForTranscriptWrites = async (): Promise<void> => {
+    await transcriptWriteQueue.catch(() => undefined);
+  };
+
+  const waitForTranscriptArchives = async (): Promise<void> => {
+    await transcriptArchiveQueue.catch(() => undefined);
+  };
+
+  const archiveConversation = async (messages: ChatMessage[]): Promise<void> => {
+    transcriptArchiveQueue = transcriptArchiveQueue
+      .catch(() => undefined)
+      .then(async () => {
+        await archiveTranscript(messages);
+      });
+
+    void transcriptArchiveQueue.catch(() => undefined);
+    await transcriptArchiveQueue;
   };
 
   const state = new AgentStateManager(config, {
@@ -192,12 +274,73 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
     }
   };
 
-  const executeCommand = async (commandId: string): Promise<void> => {
+  const startNewChat = async (): Promise<void> => {
+    if (state.getSnapshot().isBusy) {
+      state.setStatus('Finish the active turn before starting a new chat');
+      return;
+    }
+
+    state.markBusy('Archiving conversation');
+
+    try {
+      await waitForTranscriptWrites();
+      await waitForTranscriptArchives();
+      const currentMessages = state.getSnapshot().messages;
+      if (currentMessages.length > 0) {
+        await archiveConversation(currentMessages);
+      }
+
+      state.clearConversation();
+      state.setMcpInspector(tools.getMcpInspector());
+    } catch (error) {
+      state.setError(`Failed to start a new chat: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      if (state.getSnapshot().isBusy) {
+        state.markIdle();
+      }
+    }
+  };
+
+  const openTranscript = async (transcriptId: string): Promise<void> => {
+    if (state.getSnapshot().isBusy) {
+      state.setStatus('Finish the active turn before opening a transcript');
+      return;
+    }
+
+    state.markBusy('Opening transcript');
+
+    try {
+      await waitForTranscriptWrites();
+      await waitForTranscriptArchives();
+      const messages = await loadTranscriptById(transcriptId);
+      const currentMessages = state.getSnapshot().messages;
+      if (transcriptId !== 'current' && currentMessages.length > 0 && !messagesMatch(currentMessages, messages)) {
+        await archiveConversation(currentMessages);
+      }
+
+      state.replaceConversation(messages);
+    } catch (error) {
+      state.setError(`Failed to open transcript: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      if (state.getSnapshot().isBusy) {
+        state.markIdle();
+      }
+    }
+  };
+
+  const listSavedTranscripts = async (): Promise<TranscriptSummary[]> => {
+    await waitForTranscriptWrites();
+    await waitForTranscriptArchives();
+    return loadSavedTranscripts();
+  };
+
+  const executeCommand = async (commandId: string): Promise<CommandAction | undefined> => {
     switch (commandId) {
       case 'new-chat':
-        state.clearConversation();
-        state.setMcpInspector(tools.getMcpInspector());
+        await startNewChat();
         break;
+      case 'browse-transcripts':
+        return CommandAction.BrowseTranscripts;
       case 'edit-config':
         if (state.getSnapshot().isBusy) {
           state.setStatus('Finish the active turn before editing config');
@@ -230,7 +373,12 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
       {
         id: 'new-chat',
         label: 'New chat',
-        description: 'Clear the conversation history and saved transcript'
+        description: 'Archive the current conversation and start a clean chat'
+      },
+      {
+        id: 'browse-transcripts',
+        label: 'Browse transcripts',
+        description: 'View saved chats and reopen one without deleting it'
       },
       {
         id: 'edit-config',
@@ -259,6 +407,9 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
       }
     ],
     submitPrompt,
+    startNewChat,
+    listTranscripts: listSavedTranscripts,
+    openTranscript,
     refreshAuth,
     refreshTools,
     clearConversation: () => state.clearConversation(),
@@ -266,6 +417,7 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
     executeCommand,
     dispose: async () => {
       await transcriptWriteQueue.catch(() => undefined);
+      await transcriptArchiveQueue.catch(() => undefined);
       await refreshPromise?.catch(() => undefined);
       await tools.dispose();
       await provider.close?.();
