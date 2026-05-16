@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { mkdir, readFile, readdir, stat, unlink, writeFile } from 'fs/promises';
-import { join, resolve } from 'path';
+import { isAbsolute, join, relative, resolve } from 'path';
 import YAML from 'yaml';
 import { z } from 'zod';
 import { agentHomeDir } from '../config/persistence.js';
@@ -256,7 +256,9 @@ export async function loadTranscriptById(id: string): Promise<ChatMessage[]> {
   }
 
   const resolvedPath = resolve(transcriptArchiveDir, id);
-  if (!resolvedPath.startsWith(resolve(transcriptArchiveDir))) {
+  const archiveRoot = resolve(transcriptArchiveDir);
+  const relativePath = relative(archiveRoot, resolvedPath);
+  if (relativePath.startsWith('..') || isAbsolute(relativePath)) {
     throw new Error(`Invalid transcript id: ${id}`);
   }
 

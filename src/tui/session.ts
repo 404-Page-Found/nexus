@@ -296,7 +296,7 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
       await waitForTranscriptWrites();
       const messages = await loadTranscriptById(transcriptId);
       const currentMessages = state.getSnapshot().messages;
-      if (currentMessages.length > 0 && hasConversationChanged(currentMessages)) {
+      if (transcriptId !== 'current' && currentMessages.length > 0 && hasConversationChanged(currentMessages)) {
         await archiveTranscript(currentMessages);
       }
 
