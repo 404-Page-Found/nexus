@@ -91,6 +91,7 @@ export interface TranscriptSummary {
 export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
   const initialMessages = await loadTranscript();
   let transcriptWriteQueue = Promise.resolve();
+  let transcriptArchiveQueue = Promise.resolve();
   let activeConfig = config;
 
   const persistConversation = (messages: ChatMessage[]): Promise<void> => {
@@ -111,6 +112,21 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
 
   const waitForTranscriptWrites = async (): Promise<void> => {
     await transcriptWriteQueue.catch(() => undefined);
+  };
+
+  const waitForTranscriptArchives = async (): Promise<void> => {
+    await transcriptArchiveQueue.catch(() => undefined);
+  };
+
+  const archiveConversation = async (messages: ChatMessage[]): Promise<void> => {
+    transcriptArchiveQueue = transcriptArchiveQueue
+      .catch(() => undefined)
+      .then(async () => {
+        await archiveTranscript(messages);
+      });
+
+    void transcriptArchiveQueue.catch(() => undefined);
+    await transcriptArchiveQueue;
   };
 
   const state = new AgentStateManager(config, {
@@ -264,17 +280,24 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
       return;
     }
 
+    state.markBusy('Archiving conversation');
+
     try {
       await waitForTranscriptWrites();
+      await waitForTranscriptArchives();
       const currentMessages = state.getSnapshot().messages;
       if (currentMessages.length > 0) {
-        await archiveTranscript(currentMessages);
+        await archiveConversation(currentMessages);
       }
 
       state.clearConversation();
       state.setMcpInspector(tools.getMcpInspector());
     } catch (error) {
       state.setError(`Failed to start a new chat: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      if (state.getSnapshot().isBusy) {
+        state.markIdle();
+      }
     }
   };
 
@@ -284,22 +307,30 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
       return;
     }
 
+    state.markBusy('Opening transcript');
+
     try {
       await waitForTranscriptWrites();
+      await waitForTranscriptArchives();
       const messages = await loadTranscriptById(transcriptId);
       const currentMessages = state.getSnapshot().messages;
       if (transcriptId !== 'current' && currentMessages.length > 0 && !messagesMatch(currentMessages, messages)) {
-        await archiveTranscript(currentMessages);
+        await archiveConversation(currentMessages);
       }
 
       state.replaceConversation(messages);
     } catch (error) {
       state.setError(`Failed to open transcript: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      if (state.getSnapshot().isBusy) {
+        state.markIdle();
+      }
     }
   };
 
   const listSavedTranscripts = async (): Promise<TranscriptSummary[]> => {
     await waitForTranscriptWrites();
+    await waitForTranscriptArchives();
     return loadSavedTranscripts();
   };
 
