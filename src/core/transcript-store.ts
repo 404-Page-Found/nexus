@@ -150,6 +150,24 @@ async function listArchiveFiles(): Promise<string[]> {
   }
 }
 
+async function collectArchiveSummaries(): Promise<ArchiveSummary[]> {
+  const archiveFiles = await listArchiveFiles();
+  const summaries: ArchiveSummary[] = [];
+
+  for (const fileName of archiveFiles) {
+    const fileSummary = await readArchiveSummaryFromFile(fileName);
+    if (fileSummary) {
+      summaries.push(fileSummary);
+    }
+  }
+
+  return summaries;
+}
+
+async function rewriteArchiveIndex(entries: ArchiveSummary[]): Promise<void> {
+  await writeFile(transcriptArchiveIndex, YAML.stringify({ entries }, { indent: 2 }), { encoding: 'utf8' });
+}
+
 export async function loadTranscript(): Promise<ChatMessage[]> {
   try {
     return (await readTranscriptFile(transcriptPath)) ?? [];
@@ -193,11 +211,10 @@ export async function archiveTranscript(messages: ChatMessage[]): Promise<void> 
     index.entries.push(indexEntry);
     await writeFile(transcriptArchiveIndex, YAML.stringify(index, { indent: 2 }), { encoding: 'utf8' });
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      await writeFile(transcriptArchiveIndex, YAML.stringify({ entries: [indexEntry] }, { indent: 2 }), { encoding: 'utf8' });
-    } else {
-      throw new Error(`Failed to update archive index: ${error instanceof Error ? error.message : String(error)}`);
-    }
+    debug(`Failed to update archive index incrementally: ${error instanceof Error ? error.message : String(error)}`);
+    const summaries = await collectArchiveSummaries();
+    const mergedSummaries = [...summaries.filter((entry) => entry.id !== indexEntry.id), indexEntry];
+    await rewriteArchiveIndex(mergedSummaries);
   }
 }
 
@@ -226,27 +243,8 @@ export async function loadArchivedSummaries(): Promise<Array<{ id: string; messa
 
     return summaries;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      const summaries: ArchiveSummary[] = [];
-      for (const fileName of archiveFiles) {
-        const fileSummary = await readArchiveSummaryFromFile(fileName);
-        if (fileSummary) {
-          summaries.push(fileSummary);
-        }
-      }
-
-      return summaries;
-    }
     debug(`Failed to load archive index: ${error instanceof Error ? error.message : String(error)}`);
-    const summaries: ArchiveSummary[] = [];
-    for (const fileName of archiveFiles) {
-      const fileSummary = await readArchiveSummaryFromFile(fileName);
-      if (fileSummary) {
-        summaries.push(fileSummary);
-      }
-    }
-
-    return summaries;
+    return collectArchiveSummaries();
   }
 }
 

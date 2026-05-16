@@ -417,6 +417,7 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
     executeCommand,
     dispose: async () => {
       await transcriptWriteQueue.catch(() => undefined);
+      await transcriptArchiveQueue.catch(() => undefined);
       await refreshPromise?.catch(() => undefined);
       await tools.dispose();
       await provider.close?.();
