@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { mkdir, readFile, stat, unlink, writeFile } from 'fs/promises';
+import { mkdir, readFile, readdir, stat, unlink, writeFile } from 'fs/promises';
 import { join, resolve } from 'path';
 import YAML from 'yaml';
 import { z } from 'zod';
@@ -46,6 +46,13 @@ const archiveIndexEntrySchema = z.object({
 const archiveIndexSchema = z.object({
   entries: z.array(archiveIndexEntrySchema)
 });
+
+type ArchiveSummary = {
+  id: string;
+  messageCount: number;
+  preview: string;
+  updatedAt: string;
+};
 
 async function ensureAgentHome(): Promise<void> {
   await mkdir(agentHomeDir, { recursive: true });
@@ -110,6 +117,39 @@ async function statIfExists(path: string): Promise<string | undefined> {
   }
 }
 
+async function readArchiveSummaryFromFile(fileName: string): Promise<ArchiveSummary | null> {
+  const filePath = join(transcriptArchiveDir, fileName);
+
+  try {
+    const messages = await readTranscriptFile(filePath);
+    const fileStat = await stat(filePath);
+    return {
+      id: fileName,
+      messageCount: messages?.length ?? 0,
+      preview: summarizeTranscript(messages ?? []),
+      updatedAt: fileStat.mtime.toISOString()
+    };
+  } catch (error) {
+    debug(`Failed to read archived transcript ${fileName}: ${error instanceof Error ? error.message : String(error)}`);
+    return null;
+  }
+}
+
+async function listArchiveFiles(): Promise<string[]> {
+  try {
+    const entries = await readdir(transcriptArchiveDir, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.yaml') && entry.name !== '.index.yaml')
+      .map((entry) => entry.name);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return [];
+    }
+
+    throw error;
+  }
+}
+
 export async function loadTranscript(): Promise<ChatMessage[]> {
   try {
     return (await readTranscriptFile(transcriptPath)) ?? [];
@@ -163,16 +203,50 @@ export async function archiveTranscript(messages: ChatMessage[]): Promise<void> 
 
 export async function loadArchivedSummaries(): Promise<Array<{ id: string; messageCount: number; preview: string; updatedAt: string }>> {
   await ensureTranscriptArchiveDir();
+
+  const archiveFiles = await listArchiveFiles();
   try {
     const raw = await readFile(transcriptArchiveIndex, 'utf8');
     const index = archiveIndexSchema.parse(YAML.parse(raw));
-    return index.entries;
+    const indexedEntries = new Map(index.entries.map((entry) => [entry.id, entry] as const));
+    const summaries: ArchiveSummary[] = [];
+
+    for (const fileName of archiveFiles) {
+      const indexedSummary = indexedEntries.get(fileName);
+      if (indexedSummary) {
+        summaries.push(indexedSummary);
+        continue;
+      }
+
+      const fileSummary = await readArchiveSummaryFromFile(fileName);
+      if (fileSummary) {
+        summaries.push(fileSummary);
+      }
+    }
+
+    return summaries;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return [];
+      const summaries: ArchiveSummary[] = [];
+      for (const fileName of archiveFiles) {
+        const fileSummary = await readArchiveSummaryFromFile(fileName);
+        if (fileSummary) {
+          summaries.push(fileSummary);
+        }
+      }
+
+      return summaries;
     }
     debug(`Failed to load archive index: ${error instanceof Error ? error.message : String(error)}`);
-    return [];
+    const summaries: ArchiveSummary[] = [];
+    for (const fileName of archiveFiles) {
+      const fileSummary = await readArchiveSummaryFromFile(fileName);
+      if (fileSummary) {
+        summaries.push(fileSummary);
+      }
+    }
+
+    return summaries;
   }
 }
 
