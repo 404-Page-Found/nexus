@@ -118,7 +118,8 @@ export async function loadTranscript(): Promise<ChatMessage[]> {
       return [];
     }
 
-    throw new Error(`Failed to read transcript: ${error instanceof Error ? error.message : String(error)}`);
+    debug(`Failed to load current transcript: ${error instanceof Error ? error.message : String(error)}`);
+    return [];
   }
 }
 

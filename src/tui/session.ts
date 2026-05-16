@@ -25,9 +25,29 @@ function messagesMatch(left: ChatMessage[], right: ChatMessage[]): boolean {
     const rightMessage = right[index]!;
     if (
       leftMessage.role !== rightMessage.role ||
-      leftMessage.content !== rightMessage.content
+      leftMessage.content !== rightMessage.content ||
+      leftMessage.name !== rightMessage.name ||
+      leftMessage.toolCallId !== rightMessage.toolCallId
     ) {
       return false;
+    }
+
+    const leftToolCalls = leftMessage.toolCalls ?? [];
+    const rightToolCalls = rightMessage.toolCalls ?? [];
+    if (leftToolCalls.length !== rightToolCalls.length) {
+      return false;
+    }
+
+    for (let toolCallIndex = 0; toolCallIndex < leftToolCalls.length; toolCallIndex += 1) {
+      const leftToolCall = leftToolCalls[toolCallIndex]!;
+      const rightToolCall = rightToolCalls[toolCallIndex]!;
+      if (
+        leftToolCall.id !== rightToolCall.id ||
+        leftToolCall.name !== rightToolCall.name ||
+        JSON.stringify(leftToolCall.arguments) !== JSON.stringify(rightToolCall.arguments)
+      ) {
+        return false;
+      }
     }
   }
 
