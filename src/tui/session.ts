@@ -92,13 +92,6 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
   const initialMessages = await loadTranscript();
   let transcriptWriteQueue = Promise.resolve();
   let activeConfig = config;
-  let activeTranscriptBaseline = structuredClone(initialMessages);
-
-  const rememberConversation = (messages: ChatMessage[]): void => {
-    activeTranscriptBaseline = structuredClone(messages);
-  };
-
-  const hasConversationChanged = (messages: ChatMessage[]): boolean => !messagesMatch(messages, activeTranscriptBaseline);
 
   const persistConversation = (messages: ChatMessage[]): Promise<void> => {
     transcriptWriteQueue = transcriptWriteQueue
@@ -274,11 +267,10 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
     try {
       await waitForTranscriptWrites();
       const currentMessages = state.getSnapshot().messages;
-      if (currentMessages.length > 0 && hasConversationChanged(currentMessages)) {
+      if (currentMessages.length > 0) {
         await archiveTranscript(currentMessages);
       }
 
-      rememberConversation([]);
       state.clearConversation();
       state.setMcpInspector(tools.getMcpInspector());
     } catch (error) {
@@ -296,11 +288,10 @@ export async function createTuiSession(config: AppConfig): Promise<TuiSession> {
       await waitForTranscriptWrites();
       const messages = await loadTranscriptById(transcriptId);
       const currentMessages = state.getSnapshot().messages;
-      if (transcriptId !== 'current' && currentMessages.length > 0 && hasConversationChanged(currentMessages)) {
+      if (transcriptId !== 'current' && currentMessages.length > 0 && !messagesMatch(currentMessages, messages)) {
         await archiveTranscript(currentMessages);
       }
 
-      rememberConversation(messages);
       state.replaceConversation(messages);
     } catch (error) {
       state.setError(`Failed to open transcript: ${error instanceof Error ? error.message : String(error)}`);
