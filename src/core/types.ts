@@ -71,6 +71,7 @@ export interface McpServerConfig {
 
 export interface AppConfig {
   provider: ProviderSettings;
+  systemPrompt: string;
   tools: {
     native: string[];
     mcpServers: McpServerConfig[];
