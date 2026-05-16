@@ -15,7 +15,12 @@ interface McpSession {
   client: Client;
   transport: StdioClientTransport | StreamableHTTPClientTransport;
   toolNames: Map<string, string>;
-  tools: string[];
+  tools: Array<{
+    fullName: string;
+    originalName: string;
+    description: string | undefined;
+    inputSchema: Record<string, unknown>;
+  }>;
 }
 
 function stringifyToolContent(content: unknown): string {
@@ -75,7 +80,7 @@ async function createSession(server: McpServerConfig): Promise<McpSession> {
   }
 
   const toolNames = new Map<string, string>();
-  const tools: string[] = [];
+  const tools: McpSession['tools'] = [];
 
   try {
     await client.connect(transport as unknown as Parameters<typeof client.connect>[0]);
@@ -85,8 +90,15 @@ async function createSession(server: McpServerConfig): Promise<McpSession> {
     do {
       const page = await client.listTools({ cursor });
       for (const tool of page.tools) {
-        toolNames.set(`${server.name}.${tool.name}`, tool.name);
-        tools.push(tool.name);
+        const fullName = `${server.name}.${tool.name}`;
+
+        toolNames.set(fullName, tool.name);
+        tools.push({
+          fullName,
+          originalName: tool.name,
+          description: tool.description,
+          inputSchema: tool.inputSchema as Record<string, unknown>
+        });
       }
       cursor = page.nextCursor ?? undefined;
     } while (cursor);
@@ -162,14 +174,11 @@ export class McpBridge {
         const session = await createSession(server);
         nextSessions.set(server.name, session);
 
-        for (const [fullName, originalName] of session.toolNames.entries()) {
+        for (const tool of session.tools) {
           specs.push({
-            name: fullName,
-            description: `MCP tool from ${server.name}: ${originalName}`,
-            inputSchema: {
-              type: 'object',
-              additionalProperties: true
-            }
+            name: tool.fullName,
+            description: tool.description ?? `MCP tool from ${server.name}: ${tool.originalName}`,
+            inputSchema: tool.inputSchema
           });
         }
 
@@ -178,7 +187,7 @@ export class McpBridge {
           transport: server.transport,
           enabled: true,
           status: 'connected',
-          tools: session.tools
+          tools: session.tools.map((tool) => tool.originalName)
         });
       } catch (error) {
         inspectedServers.push({
